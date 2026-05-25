@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git submodule *)",
+      "Bash(where python *)",
+      "Bash(where python3 *)",
+      "Bash(where py *)",
+      "Bash(/c/Python314/python.exe -c ' *)",
+      "Bash(Get-ChildItem -Path \"d:\\\\Keyboard proj\\\\Keyboard101\" -Recurse -Include \"*.java\", \"*.gradle\", \"AndroidManifest.xml\", \"*.html\")",
+      "Bash(Select-Object FullName)"
+    ]
+  }
+}

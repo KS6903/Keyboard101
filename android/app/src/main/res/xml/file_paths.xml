@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!--
+        Exposes the app's private external files directory so FileProvider can hand
+        the downloaded update APK to the Android system installer.
+        Maps to: /Android/data/com.keyboard101/files/
+    -->
+    <external-files-path name="apk_download" path="." />
+</paths>

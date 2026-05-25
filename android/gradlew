@@ -1,0 +1,11 @@
+#!/bin/sh
+# Gradle wrapper start-up script for UN*X
+
+DIR="$(cd "$(dirname "$0")" && pwd)"
+APP_HOME="$DIR"
+CLASSPATH=$APP_HOME/gradle/wrapper/gradle-wrapper.jar
+
+exec "${JAVA_HOME:-/usr}/bin/java" \
+  -classpath "$CLASSPATH" \
+  -Dorg.gradle.appname="$0" \
+  org.gradle.wrapper.GradleWrapperMain "$@"

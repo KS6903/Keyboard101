@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!--
+        Block all cleartext (plain HTTP) traffic for every domain.
+        The only outbound connection this app makes is to download the
+        ML Kit handwriting model once on first use — that goes through
+        Google Play Services over HTTPS automatically.
+    -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <!-- Trust only system-installed CAs (no user-installed CAs) -->
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

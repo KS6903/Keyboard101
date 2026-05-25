@@ -1,0 +1,1509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#1f2937" />
+<title>Keyboard101 — Test</title>
+<style>
+  /* ---- Dark theme (default) ---- */
+  :root {
+    --bg: #0f172a;
+    --panel: #1f2937;
+    --key: #374151;
+    --key-dark: #4b5563;
+    --key-active: #6b7280;
+    --key-text: #f9fafb;
+    --text-dim: #9ca3af;
+    --accent: #2563eb;
+    --textarea-bg: #111827;
+    --border: #374151;
+    --resizer-bar: #6b7280;
+    --title-color: #9ca3af;
+    --shadow: rgba(0,0,0,0.4);
+    --gap: 4px;
+    --radius: 8px;
+    --kbd-height: 320px;
+    --candidate-bg: #1f2937;
+  }
+  /* ---- Light theme ---- */
+  :root[data-theme="light"] {
+    --bg: #f1f5f9;
+    --panel: #e2e8f0;
+    --key: #f8fafc;
+    --key-dark: #94a3b8;
+    --key-active: #cbd5e1;
+    --key-text: #0f172a;
+    --text-dim: #64748b;
+    --accent: #2563eb;
+    --textarea-bg: #ffffff;
+    --border: #cbd5e1;
+    --resizer-bar: #94a3b8;
+    --title-color: #64748b;
+    --shadow: rgba(0,0,0,0.12);
+    --candidate-bg: #e2e8f0;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--key-text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
+  body {
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* "Phone screen" area */
+  .screen {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 12px;
+    gap: 10px;
+    overflow: hidden;
+  }
+
+  .title {
+    font-size: 14px;
+    color: var(--title-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .title strong { color: var(--key-text); font-weight: 600; }
+
+  #output {
+    flex: 1;
+    background: var(--textarea-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--key-text);
+    font-size: 18px;
+    padding: 12px;
+    resize: none;
+    outline: none;
+    font-family: inherit;
+  }
+
+  /* Resize handle */
+  .resizer {
+    height: 20px;
+    background: var(--panel);
+    cursor: ns-resize;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+    touch-action: none;
+    border-top: 1px solid var(--border);
+    position: relative;
+  }
+  .resizer .bar {
+    width: 60px;
+    height: 4px;
+    background: var(--resizer-bar);
+    border-radius: 2px;
+  }
+  .settings-gear {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    background: transparent;
+    border: none;
+    border-right: 2px solid var(--resizer-bar);
+    color: var(--text-dim);
+    font-size: 11px;
+    cursor: pointer;
+    padding: 0 10px;
+    line-height: 1;
+    touch-action: manipulation;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+  }
+  .settings-popup {
+    display: none;
+    position: fixed;
+    left: 10px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 -4px 20px var(--shadow);
+    padding: 16px;
+    width: min(260px, calc(100vw - 20px));
+    z-index: 200;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .settings-popup.open { display: flex; }
+  .sp-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .sp-label {
+    font-size: 13px;
+    color: var(--text-dim);
+    flex: 1;
+  }
+  .settings-popup input[type=range] {
+    width: 100%;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+  .sp-btn {
+    background: var(--key-dark);
+    border: none;
+    border-radius: 6px;
+    color: var(--key-text);
+    cursor: pointer;
+    font-size: 13px;
+    padding: 5px 10px;
+    white-space: nowrap;
+  }
+  .sp-btn:active { opacity: 0.8; }
+  .sp-note { font-size: 11px; color: var(--text-dim); text-align: center; }
+
+  /* Keyboard container */
+  .keyboard {
+    background: var(--panel);
+    height: var(--kbd-height);
+    min-height: 180px;
+    max-height: 70vh;
+    padding: 6px 4px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap);
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+  }
+
+  .row {
+    display: flex;
+    flex: 1;
+    gap: var(--gap);
+    padding: 0 4px;
+  }
+
+  .key {
+    flex: 1;
+    background: var(--key);
+    color: var(--key-text);
+    border: none;
+    border-radius: var(--radius);
+    font-size: 18px;
+    font-weight: 500;
+    font-family: inherit;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    touch-action: manipulation;
+    user-select: none;
+    transition: background 0.05s ease, transform 0.05s ease;
+    box-shadow: 0 1px 0 var(--shadow);
+    min-width: 0;
+    padding: 0 4px;
+  }
+  .key:active, .key.pressed {
+    background: var(--key-active);
+    transform: scale(0.95);
+  }
+  .key.special {
+    background: var(--key-dark);
+    font-size: 14px;
+  }
+  .key.accent {
+    background: var(--accent);
+  }
+  .key.wide { flex: 1.5; }
+  .key.xwide { flex: 2.2; }
+  .key.space { flex: 5; }
+  .key.shift-on   { background: var(--accent) !important; }
+  .key.shift-lock { background: var(--accent) !important; outline: 2px solid #fff; outline-offset: -3px; }
+
+  /* Emoji panel */
+  .emoji-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .emoji-bottom {
+    flex: 0 0 50px;
+    display: flex;
+    gap: var(--gap);
+    padding: 0 4px 4px;
+  }
+  .emoji-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .emoji-tabs::-webkit-scrollbar { display: none; }
+  .emoji-tab {
+    background: var(--key-dark);
+    border: none;
+    color: var(--key-text);
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 18px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .emoji-tab.active { background: var(--accent); color: #fff; }
+  .emoji-grid {
+    flex: 1;
+    overflow-y: auto;
+    scrollbar-width: none;
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 2px;
+    padding: 4px;
+    align-content: start;
+  }
+  .emoji-grid::-webkit-scrollbar { display: none; }
+  .emoji-cell {
+    background: transparent;
+    border: none;
+    color: var(--key-text);
+    font-size: clamp(16px, calc(var(--kbd-height) * 0.07), 30px);
+    aspect-ratio: 1;
+    cursor: pointer;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .emoji-cell img { width: clamp(18px, calc(var(--kbd-height) * 0.075), 32px); height: auto; }
+  .emoji-cell:active { background: var(--key-active); }
+
+  /* T9 popup for 3x4 */
+  .key.t9 {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    line-height: 1;
+  }
+  .key.t9 .main { font-size: 20px; font-weight: 600; }
+  .key.t9 .sub { font-size: 10px; color: var(--text-dim); margin-top: 2px; letter-spacing: 1px; }
+
+  /* Mode switcher hint */
+  .hint {
+    font-size: 11px;
+    color: #6b7280;
+    text-align: center;
+    padding: 4px;
+  }
+
+  /* Candidate bar */
+  .candidate-bar {
+    height: 44px;
+    background: var(--candidate-bg);
+    display: none;
+    align-items: center;
+    padding: 0 8px;
+    gap: 12px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+    box-shadow: inset 0 -1px 3px var(--shadow);
+  }
+  .candidate-bar.visible { display: flex; }
+  .candidate-bar:empty::after, .candidate-bar.empty::after {
+    content: "Type pinyin or draw above...";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    color: var(--text-dim);
+    font-size: 13px;
+    font-weight: 500;
+    pointer-events: none;
+    opacity: 0.7;
+  }
+  .candidate-bar.hw-mode::after {
+    content: "Draw in the area below...";
+  }
+  .hw-notice {
+    font-size: 10px;
+    color: var(--text-dim);
+    opacity: 0.6;
+    margin-left: auto;
+    padding: 0 8px;
+    white-space: nowrap;
+    align-self: center;
+    pointer-events: none;
+  }
+  .candidate-item {
+    color: var(--key-text);
+    font-size: 19px;
+    cursor: pointer;
+    white-space: nowrap;
+    padding: 6px 12px;
+    border-radius: 6px;
+    transition: background 0.1s;
+  }
+  .candidate-item:first-child {
+    color: var(--accent);
+    font-weight: bold;
+    background: rgba(37, 99, 235, 0.1);
+  }
+  .candidate-item:active { background: var(--key-active); border-radius: 4px; }
+  .pinyin-preedit {
+    color: var(--accent);
+    font-weight: bold;
+    font-size: 14px;
+    margin-right: 8px;
+    border-right: 1px solid var(--border);
+    padding-right: 8px;
+  }
+
+  /* Spacebar swipe mode indicator — carousel */
+  #swipe-indicator {
+    position: fixed;
+    display: none;
+    pointer-events: none;
+    z-index: 2000;
+    transform: translateX(-50%);
+    background: rgba(15, 23, 42, 0.93);
+    border-radius: 20px;
+    padding: 6px;
+    box-shadow: 0 6px 32px rgba(0,0,0,0.5);
+  }
+  #swipe-indicator::after {
+    content: '';
+    position: absolute;
+    bottom: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 8px solid transparent;
+    border-bottom: none;
+    border-top-color: rgba(15, 23, 42, 0.93);
+  }
+  .si-track {
+    display: flex;
+    align-items: center;
+    will-change: transform;
+  }
+  .si-mode {
+    min-width: 96px;
+    text-align: center;
+    padding: 8px 14px;
+    border-radius: 14px;
+    font-size: 13px;
+    font-weight: 500;
+    color: rgba(255,255,255,0.4);
+    white-space: nowrap;
+    transition: color 0.12s ease, background 0.12s ease,
+                font-size 0.12s ease, font-weight 0.12s ease;
+  }
+  .si-mode.si-active {
+    background: var(--accent);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 700;
+  }
+
+  /* Handwriting canvas */
+  #handwriting-canvas {
+    background: var(--key);
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+    display: none;
+  }
+  .handwriting-area {
+    flex: 1;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    margin: 4px;
+    border: 1px dashed var(--text-dim);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+</style>
+</head>
+<body>
+  <div class="screen">
+    <div class="title">
+      <strong>Keyboard101</strong>
+      <span id="mode-label">QWERTY</span>
+    </div>
+    <textarea id="output" placeholder="Tap keys below to type here..." autofocus></textarea>
+    <div class="hint">Resize keyboard via bar. 🌐 to switch. <b>Swipe Spacebar</b> to change Chinese modes.</div>
+  </div>
+
+  <div id="candidate-bar" class="candidate-bar"></div>
+  <div id="swipe-indicator"></div>
+
+  <div class="resizer" id="resizer" title="Drag to resize keyboard">
+    <div class="bar"></div>
+    <button class="settings-gear" id="settings-gear-btn" title="Settings">▲</button>
+  </div>
+
+  <div id="settings-popup" class="settings-popup">
+    <div class="sp-row">
+      <span class="sp-label">Keyboard size</span>
+      <span id="size-label" class="sp-label" style="text-align:right;flex:0 0 auto;font-size:12px;">320px</span>
+    </div>
+    <input type="range" id="size-slider" min="180" max="500" step="10" value="320" />
+    <div class="sp-row">
+      <span class="sp-label">Theme</span>
+      <button class="sp-btn" id="popup-theme-btn">☀️ Light mode</button>
+    </div>
+    <div class="sp-row">
+      <span class="sp-label">Auto-capitalize sentences</span>
+      <button class="sp-btn" id="popup-autocap-btn">On</button>
+    </div>
+    <div class="sp-row">
+      <span class="sp-label">System settings</span>
+      <button class="sp-btn" id="popup-settings-btn">Open ↗</button>
+    </div>
+    <div class="sp-note">Keyboard101 v1.0 — swipe bar to resize</div>
+  </div>
+
+  <div class="keyboard" id="keyboard"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  const output = document.getElementById('output');
+  const keyboard = document.getElementById('keyboard');
+  const modeLabel = document.getElementById('mode-label');
+  const resizer = document.getElementById('resizer');
+  const candidateBar = document.getElementById('candidate-bar');
+
+  // ---------- State ----------
+  const State = {
+    mode: 'qwerty',         // 'qwerty' | 'numpad' | 'symbols' | 'emoji' | 'pinyin' | 'handwriting'
+    prevAlphaMode: 'qwerty',// mode to return to when pressing ABC in symbols
+    shift: false,           // false | true | 'lock'
+    symbolsPage: 1,         // 1 | 2  (page of symbols panel)
+    t9: { lastKey: null, index: 0, timer: null },
+    autoCap: true,          // auto-capitalize first letter of each sentence
+    pinyin: '',             // current pinyin string being typed
+    candidates: [],         // character candidates
+    hwTimer: null,          // 2s auto-commit timer for handwriting
+  };
+
+  const CHINESE_MODES = ['qwerty', 'pinyin', 'handwriting'];
+  let chineseModeIdx = 0;
+  let candidateFetchTimer = null; // kept for future use
+
+  // Local pinyin→characters table — no network calls.
+  // Characters within each syllable are ordered by frequency (most common first).
+  const PINYIN_DATA = {
+    a:'啊阿',ai:'爱埃艾碍哀矮',an:'安按案暗岸',ang:'昂',ao:'奥澳傲熬',
+    ba:'把吧八百拔爸罢霸',bai:'白百拜败摆柏',ban:'半版搬班办般扳',bang:'帮绑棒',bao:'报包宝保抱暴爆薄',bei:'被北背杯倍备悲碑',ben:'本奔',beng:'崩蹦',
+    bi:'比必笔闭避碧壁毕鼻彼',bian:'变边便遍辩编鞭',biao:'表标',bie:'别',bin:'宾',bing:'病并冰兵',bo:'波博伯播勃',bu:'不步部布补捕卜',
+    ca:'擦',cai:'才材财采菜彩裁猜',can:'参残惨',cang:'仓藏苍',cao:'草操',ce:'策侧测',ceng:'曾层',
+    cha:'查察插茶差',chai:'拆',chan:'产禅颤',chang:'场长常唱厂尝',chao:'超朝潮炒',che:'车彻撤',chen:'陈沉晨',cheng:'成城程乘承呈',
+    chi:'吃持迟池尺齿',chong:'冲重充崇虫',chou:'愁仇丑臭抽',chu:'出处初除储',chuan:'传穿船串川',chuang:'创窗床闯',chui:'吹垂',chun:'春纯',
+    ci:'此次词辞刺磁',cong:'从丛聪',cu:'粗促醋',cun:'村存寸',cuo:'错措挫',
+    da:'大打达答搭',dai:'代带待戴呆',dan:'但担单弹淡诞',dang:'当党档荡',dao:'道到倒刀导',de:'的地得',deng:'等灯',
+    di:'地第低底敌',dian:'点电店典奠',diao:'掉调雕吊',die:'叠蝶跌',ding:'定顶钉',dong:'动东懂洞冻',dou:'都斗豆兜',du:'度读独毒渡堵',
+    duan:'段断短端',dui:'对队堆',dun:'顿吨盾',duo:'多夺朵躲',
+    e:'恶额俄',en:'恩',er:'而二耳儿',
+    fa:'发法罚乏',fan:'反饭范翻烦凡犯',fang:'方放房防访',fei:'非飞费废肥',fen:'分份粉纷',feng:'风奉封峰丰',fu:'复父服负福赴富辅',
+    gai:'该改盖概',gan:'干感敢赶甘肝',gang:'刚钢港纲',gao:'高告稿',ge:'个各格哥革葛歌',gen:'根跟',geng:'更耕梗',
+    gong:'共工公功供贡攻',gou:'够勾构狗沟',gu:'古故鼓股骨顾固谷',gua:'瓜挂',guai:'乖怪',guan:'关管观官馆惯',guang:'广光',gui:'规贵归鬼',guo:'过国果',
+    hai:'还孩海害',han:'汉含喊旱寒',hang:'航',hao:'好号毫豪',he:'和合何河核喝',hei:'黑',hen:'很狠恨',heng:'横衡',hong:'红洪宏轰',
+    hou:'后候厚猴',hu:'湖互呼胡虎乎户护',hua:'话化花画华滑',huai:'坏怀',huan:'换还欢环患',huang:'黄皇',hui:'回会汇惠毁慧灰',hun:'婚混浑',huo:'火或活货获',
+    ji:'机及级己记技际极计基集击激',jia:'家加价甲假驾',jian:'见件建间简减健检渐',jiang:'将讲江奖降',jiao:'叫教较交角',jie:'结界节接解借姐',
+    jin:'进金今近尽紧',jing:'京经精静竟镜景',jiu:'就九久旧究救',ju:'局举具居句聚剧据',juan:'卷',jue:'觉决绝',jun:'军均俊',
+    kai:'开',kan:'看勘砍刊',kang:'抗康',kao:'考靠烤',ke:'可科客刻克课颗',ken:'肯',kong:'空恐控',kou:'口扣',ku:'苦库哭酷裤',
+    kua:'夸跨',kuai:'快块',kuan:'宽款',kui:'亏愧',kun:'困',kuo:'扩括',
+    la:'拉啦腊辣',lai:'来',lan:'蓝拦懒烂览',lang:'浪廊朗',lao:'老劳涝',le:'了乐',lei:'累泪类雷',
+    li:'里力利立礼理历例离',lian:'联练脸恋连廉',liang:'两量亮粮良凉',liao:'了料聊',lie:'列裂猎',lin:'林临邻',
+    ling:'令领龄灵铃零',liu:'留六流柳',long:'龙弄隆',lou:'楼露漏',lu:'路陆录鹿炉',luan:'乱',lun:'轮论',luo:'落络骆裸',
+    ma:'马妈嘛',mai:'买卖麦',man:'满慢漫',mang:'忙芒茫',mao:'毛猫茂帽贸',mei:'没美每眉煤',men:'们门闷',meng:'梦猛盟蒙',
+    mi:'米密秘迷',mian:'面免棉眠',miao:'秒庙妙',min:'民敏',ming:'明命名',mo:'模墨默摩魔末',mou:'某谋',mu:'木目母牧墓亩',
+    na:'那拿哪纳',nai:'奶耐乃',nan:'南难男',nao:'脑闹恼',ne:'呢',nei:'内',neng:'能',ni:'你泥',nian:'年念',niang:'娘',
+    niao:'鸟',nin:'您',ning:'宁凝',niu:'牛扭',nong:'农浓弄',nu:'努怒',nuan:'暖',nuo:'诺',
+    ou:'欧偶',
+    pa:'怕爬',pai:'派排牌拍',pan:'盼判盘',pang:'旁胖',pao:'跑炮抛',pei:'配陪佩',pen:'喷盆',peng:'朋碰棚',
+    pi:'批皮疲片匹脾',pian:'篇骗偏',piao:'漂票飘',pin:'品拼贫',ping:'平评瓶屏',po:'破婆迫坡泼',pu:'普铺朴',
+    qi:'起其期七气器奇齐妻',qia:'恰',qian:'前钱千签浅迁',qiang:'强枪墙',qiao:'桥巧悄敲瞧',qie:'且切',qin:'亲琴禽',
+    qing:'情青清请轻庆',qiong:'穷',qiu:'球秋丘求',qu:'去取趋曲区渠',quan:'全权圈泉',que:'却缺确',qun:'群裙',
+    ran:'然染燃',rang:'让',re:'热',ren:'人任认仁忍',ri:'日',rong:'容融荣',rou:'肉柔',ru:'如入',ruan:'软',ruo:'若弱',
+    sa:'撒洒',san:'三散',sao:'扫',se:'色',sha:'沙杀',shan:'山善闪扇',shang:'上商伤',shao:'少烧稍',
+    she:'社舍设射',shen:'深什神申伸甚审',sheng:'生胜声升省盛绳',shi:'时是事实使式市世视师十',
+    shou:'手受首收守',shu:'书树数属术述输',shuai:'帅摔',shuan:'拴',shuang:'双霜',shui:'水谁',shun:'顺',shuo:'说',
+    si:'四死私思丝司',song:'送松颂',su:'素速诉苏俗宿',sui:'岁随虽碎',sun:'孙损',suo:'所索缩',
+    ta:'他她它',tai:'太态台抬',tan:'谈探弹叹炭',tang:'堂糖汤躺',tao:'讨套桃逃',te:'特',teng:'腾疼',
+    ti:'题体替提',tian:'天田添',tiao:'条跳挑',tie:'铁贴',ting:'听庭停挺',tong:'同通统痛铜童',tou:'头投偷透',tu:'土图突途',
+    tuan:'团',tui:'推退腿',tuo:'脱拖',
+    wa:'挖娃',wai:'外',wan:'完万晚湾弯',wang:'往网望王忘',wei:'位为未维威卫危围',wen:'文问温稳闻',wo:'我握',wu:'无物务五吴舞误',
+    xi:'系习西喜戏细席吸希',xia:'下夏峡虾',xian:'现先县显限线险',xiang:'想象向乡相香项',xiao:'小笑校消效',
+    xie:'写协鞋谢些斜',xin:'新心信辛欣',xing:'行星性形型兴幸醒',xiong:'熊雄胸',xiu:'秀休修',xu:'许续序需虚须徐',
+    xuan:'选宣悬旋',xue:'学雪血穴',xun:'训寻迅讯',
+    ya:'亚压牙雅',yan:'研言严眼验演烟盐燕',yang:'样阳养央扬洋',yao:'要药摇遥腰',ye:'也业页叶夜野',
+    yi:'一已以义意亿艺忆移宜依议',yin:'因引音隐银印',ying:'应英影营赢映',yong:'用勇永拥泳',you:'有又友游由油右',
+    yu:'于与语育鱼余玉欲预',yuan:'原元远员园院愿',yue:'月越约',yun:'云运允',
+    za:'杂',zai:'再在载',zan:'赞',zao:'早造枣找',ze:'则责泽',zeng:'增曾',zha:'炸扎',zhai:'摘',zhan:'战展占站',
+    zhang:'张长章障',zhao:'找照朝着招',zhe:'这者折',zhen:'真针珍阵',zheng:'政正争整证',
+    zhi:'知之只制治志值至指直',zhong:'中众种终重',zhou:'周州洲',zhu:'主注住著助',zhuan:'转专',zhuang:'庄壮状装',zhui:'追',zhun:'准',zhuo:'桌捉',
+    zi:'字自子资',zong:'总综宗',zou:'走奏',zu:'组足族租祖阻',zui:'最罪嘴醉',zun:'尊',zuo:'做作坐左座',
+  };
+
+  // Module-level backspace repeat state — survives button re-creation on render()
+  let bkTimer = null;
+  let bkRepeat = null;
+  function stopBkRepeat() {
+    clearTimeout(bkTimer); clearInterval(bkRepeat);
+    bkTimer = null; bkRepeat = null;
+  }
+
+  // ---------- Layouts ----------
+  const QWERTY_ROWS = [
+    ['1','2','3','4','5','6','7','8','9','0'],
+    ['q','w','e','r','t','y','u','i','o','p'],
+    ['a','s','d','f','g','h','j','k','l'],
+    [{type:'shift', cls:'special wide'}, 'z','x','c','v','b','n','m', {label:'⌫', action:'back', cls:'special wide'}],
+    [
+      {label:'123', action:'mode:symbols', cls:'special wide'},
+      {label:'🌐', action:'cycle', cls:'special'},
+      {label:',', char:','},
+      {label:'space', action:'space', cls:'space'},
+      {label:'.', char:'.'},
+      {label:'😀', action:'mode:emoji', cls:'special'},
+      {label:'↵', action:'enter', cls:'accent wide'},
+    ],
+  ];
+
+  const SYMBOLS_ROWS = [
+    ['1','2','3','4','5','6','7','8','9','0'],
+    ['@','#','$','_','&','-','+','(',')','/'],
+    [{label:'=\\<', action:'sym-page:2', cls:'special wide'}, '*','"','\'',':',';','!','?', {label:'⌫', action:'back', cls:'special wide'}],
+    [
+      {label:'ABC', action:'back-alpha', cls:'special wide'},
+      {label:'🌐', action:'cycle', cls:'special'},
+      {label:',', char:','},
+      {label:'space', action:'space', cls:'space'},
+      {label:'.', char:'.'},
+      {label:'😀', action:'mode:emoji', cls:'special'},
+      {label:'↵', action:'enter', cls:'accent wide'},
+    ],
+  ];
+
+  const SYMBOLS2_ROWS = [
+    ['{','}','[',']','<','>','|','^','~','`'],
+    ['\\','/','=','+','%','€','£','¥','¢','°'],
+    [{label:'1/2', action:'sym-page:1', cls:'special wide'}, '!','?','~','`','|','\\','^', {label:'⌫', action:'back', cls:'special wide'}],
+    [
+      {label:'ABC', action:'back-alpha', cls:'special wide'},
+      {label:'🌐', action:'cycle', cls:'special'},
+      {label:',', char:','},
+      {label:'space', action:'space', cls:'space'},
+      {label:'.', char:'.'},
+      {label:'😀', action:'mode:emoji', cls:'special'},
+      {label:'↵', action:'enter', cls:'accent wide'},
+    ],
+  ];
+
+  const PINYIN_ROWS = [
+    ['q','w','e','r','t','y','u','i','o','p'],
+    ['a','s','d','f','g','h','j','k','l'],
+    [{type:'shift', cls:'special wide'}, 'z','x','c','v','b','n','m', {label:'⌫', action:'back', cls:'special wide'}],
+    [
+      {label:'123', action:'mode:symbols', cls:'special wide'},
+      {label:'🌐', action:'cycle', cls:'special'},
+      {label:',', char:','},
+      {label:'space', action:'space', cls:'space'},
+      {label:'.', char:'.'},
+      {label:'😀', action:'mode:emoji', cls:'special'},
+      {label:'↵', action:'enter', cls:'accent wide'},
+    ],
+  ];
+
+  // 3x4 (T9-style)
+  const NUMPAD_ROWS = [
+    [
+      {label:'1', sub:' ', t9:[' ','.',',','?','!','1'], cls:'t9'},
+      {label:'2', sub:'ABC', t9:['a','b','c','2'], cls:'t9'},
+      {label:'3', sub:'DEF', t9:['d','e','f','3'], cls:'t9'},
+      {label:'⌫', action:'back', cls:'special'},
+    ],
+    [
+      {label:'4', sub:'GHI', t9:['g','h','i','4'], cls:'t9'},
+      {label:'5', sub:'JKL', t9:['j','k','l','5'], cls:'t9'},
+      {label:'6', sub:'MNO', t9:['m','n','o','6'], cls:'t9'},
+      {label:'😀', action:'mode:emoji', cls:'special'},
+    ],
+    [
+      {label:'7', sub:'PQRS', t9:['p','q','r','s','7'], cls:'t9'},
+      {label:'8', sub:'TUV', t9:['t','u','v','8'], cls:'t9'},
+      {label:'9', sub:'WXYZ', t9:['w','x','y','z','9'], cls:'t9'},
+      {type:'shift', cls:'special'},
+    ],
+    [
+      {label:'🌐', action:'cycle', cls:'special'},
+      {label:'0', sub:'+', t9:['0','+'], cls:'t9'},
+      {label:'space', action:'space', cls:'xwide'},
+      {label:'!?=', action:'mode:symbols', cls:'special'},
+      {label:'↵', action:'enter', cls:'accent'},
+    ],
+  ];
+
+  // ---------- Emoji data ----------
+  const EMOJI = {
+    'Smileys': '😀 😃 😄 😁 😆 😅 🤣 😂 🙂 🙃 😉 😊 😇 🥰 😍 🤩 😘 😗 😚 😙 😋 😛 😜 🤪 😝 🤑 🤗 🤭 🤫 🤔 🤐 🤨 😐 😑 😶 😏 😒 🙄 😬 🤥 😌 😔 😪 🤤 😴 😷 🤒 🤕 🤢 🤮 🥵 🥶 🥴 😵 🤯 🤠 🥳 😎 🤓 🧐 😕 😟 🙁 ☹️ 😮 😯 😲 😳 🥺 😦 😧 😨 😰 😥 😢 😭 😱 😖 😣 😞 😓 😩 😫 🥱 😤 😡 😠 🤬 😈 👿 💀 ☠️ 💩 🤡 👹 👺 👻 👽 👾 🤖'.split(' '),
+    'People': '👋 🤚 🖐 ✋ 🖖 👌 🤌 🤏 ✌️ 🤞 🤟 🤘 🤙 👈 👉 👆 🖕 👇 ☝️ 👍 👎 ✊ 👊 🤛 🤜 👏 🙌 👐 🤲 🤝 🙏 ✍️ 💅 🤳 💪 🦾 🦵 🦿 🦶 👂 🦻 👃 🧠 🦷 🦴 👀 👁 👅 👄 💋 🩸'.split(' '),
+    'Animals': '🐶 🐱 🐭 🐹 🐰 🦊 🐻 🐼 🐨 🐯 🦁 🐮 🐷 🐽 🐸 🐵 🙈 🙉 🙊 🐒 🐔 🐧 🐦 🐤 🐣 🐥 🦆 🦅 🦉 🦇 🐺 🐗 🐴 🦄 🐝 🐛 🦋 🐌 🐞 🐜 🦟 🦗 🕷 🕸 🦂 🐢 🐍 🦎 🦖 🦕 🐙 🦑 🦐 🦞 🦀 🐡 🐠 🐟 🐬 🐳 🐋 🦈 🐊 🐅 🐆 🦓 🦍 🦧 🐘 🦛 🦏 🐪 🐫 🦒 🦘 🐃 🐂 🐄 🐎 🐖 🐏 🐑 🦙 🐐 🦌 🐕 🐩 🦮 🐕‍🦺 🐈 🐓 🦃 🦚 🦜 🦢 🦩 🕊 🐇 🦝 🦨 🦡 🦦 🦥 🐁 🐀 🐿 🦔'.split(' '),
+    'Food': '🍏 🍎 🍐 🍊 🍋 🍌 🍉 🍇 🍓 🫐 🍈 🍒 🍑 🥭 🍍 🥥 🥝 🍅 🍆 🥑 🥦 🥬 🥒 🌶 🫑 🌽 🥕 🫒 🧄 🧅 🥔 🍠 🥐 🥯 🍞 🥖 🥨 🧀 🥚 🍳 🧈 🥞 🧇 🥓 🥩 🍗 🍖 🦴 🌭 🍔 🍟 🍕 🥪 🥙 🧆 🌮 🌯 🫔 🥗 🥘 🫕 🥫 🍝 🍜 🍲 🍛 🍣 🍱 🥟 🦪 🍤 🍙 🍚 🍘 🍥 🥠 🥮 🍢 🍡 🍧 🍨 🍦 🥧 🧁 🍰 🎂 🍮 🍭 🍬 🍫 🍿 🍩 🍪 🌰 🥜 🍯'.split(' '),
+    'Activities': '⚽ 🏀 🏈 ⚾ 🥎 🎾 🏐 🏉 🥏 🎱 🪀 🏓 🏸 🏒 🏑 🥍 🏏 🪃 🥅 ⛳ 🪁 🏹 🎣 🤿 🥊 🥋 🎽 🛹 🛼 🛷 ⛸ 🥌 🎿 ⛷ 🏂 🪂 🏋️ 🤼 🤸 ⛹️ 🤺 🤾 🏌️ 🏇 🧘 🏄 🏊 🤽 🚣 🧗 🚵 🚴 🏆 🥇 🥈 🥉 🏅 🎖 🏵 🎗 🎫 🎟 🎪 🤹 🎭 🩰 🎨 🎬 🎤 🎧 🎼 🎹 🥁 🪘 🎷 🎺 🪗 🎸 🪕 🎻 🎲 ♟ 🎯 🎳 🎮 🎰 🧩'.split(' '),
+    'Travel': '🚗 🚕 🚙 🚌 🚎 🏎 🚓 🚑 🚒 🚐 🛻 🚚 🚛 🚜 🦯 🦽 🦼 🛴 🚲 🛵 🏍 🛺 🚨 🚔 🚍 🚘 🚖 🚡 🚠 🚟 🚃 🚋 🚞 🚝 🚄 🚅 🚈 🚂 🚆 🚇 🚊 🚉 ✈️ 🛫 🛬 🛩 💺 🛰 🚀 🛸 🚁 🛶 ⛵ 🚤 🛥 🛳 ⛴ 🚢 ⚓ ⛽ 🚧 🚦 🚥 🚏 🗺 🗿 🗽 🗼 🏰 🏯 🏟 🎡 🎢 🎠 ⛲ ⛱ 🏖 🏝 🏜 🌋 ⛰ 🏔 🗻 🏕 ⛺ 🏠 🏡 🏘 🏚 🏗 🏭 🏢 🏬 🏣 🏤 🏥 🏦 🏨 🏪 🏫 🏩 💒 🏛 ⛪ 🕌 🕍 🛕 🕋 ⛩'.split(' '),
+    'Objects': '⌚ 📱 📲 💻 ⌨️ 🖥 🖨 🖱 🖲 🕹 🗜 💽 💾 💿 📀 📼 📷 📸 📹 🎥 📽 🎞 📞 ☎️ 📟 📠 📺 📻 🎙 🎚 🎛 🧭 ⏱ ⏲ ⏰ 🕰 ⌛ ⏳ 📡 🔋 🔌 💡 🔦 🕯 🪔 🧯 🛢 💸 💵 💴 💶 💷 💰 💳 💎 ⚖️ 🪜 🧰 🪛 🔧 🔨 ⚒ 🛠 ⛏ 🪚 🔩 ⚙️ 🪤 🧱 ⛓ 🧲 🔫 💣 🧨 🪓 🔪 🗡 ⚔️ 🛡 🚬 ⚰️ 🪦 ⚱️ 🏺 🔮 📿 🧿 💈 ⚗️ 🔭 🔬 🕳 🩹 🩺 💊 💉 🩸 🧬 🦠 🧫 🧪 🌡 🧹 🪠 🧺 🧻 🚽 🚰 🚿 🛁 🛀 🧼 🪥 🪒 🧽 🪣 🧴 🛎 🔑 🗝 🚪 🪑 🛋 🛏 🛌 🧸 🪆 🖼 🪞 🪟 🛍 🛒 🎁 🎈 🎏 🎀 🪄 🪅 🎊 🎉 🎎 🏮 🎐 🧧 ✉️ 📩 📨 📧 💌 📥 📤 📦 🏷 🪧 📪 📫 📬 📭 📮 📯 📜 📃 📄 📑 🧾 📊 📈 📉 🗒 🗓 📆 📅 🗑 📇 🗃 🗳 🗄 📋 📁 📂 🗂 🗞 📰 📓 📔 📒 📕 📗 📘 📙 📚 📖 🔖 🧷 🔗 📎 🖇 📐 📏 🧮 📌 📍 ✂️ 🖊 🖋 ✒️ 🖌 🖍 📝 ✏️ 🔍 🔎 🔏 🔐 🔒 🔓'.split(' '),
+    'Symbols': '❤️ 🧡 💛 💚 💙 💜 🖤 🤍 🤎 💔 ❣️ 💕 💞 💓 💗 💖 💘 💝 💟 ☮️ ✝️ ☪️ 🕉 ☸️ ✡️ 🔯 🕎 ☯️ ☦️ 🛐 ⛎ ♈ ♉ ♊ ♋ ♌ ♍ ♎ ♏ ♐ ♑ ♒ ♓ 🆔 ⚛️ 🉑 ☢️ ☣️ 📴 📳 🈶 🈚 🈸 🈺 🈷 ✴️ 🆚 💮 🉐 ㊙️ ㊗️ 🈴 🈵 🈹 🈲 🅰️ 🅱️ 🆎 🆑 🅾️ 🆘 ❌ ⭕ 🛑 ⛔ 📛 🚫 💯 💢 ♨️ 🚷 🚯 🚳 🚱 🔞 📵 🚭 ❗ ❕ ❓ ❔ ‼️ ⁉️ 🔅 🔆 〽️ ⚠️ 🚸 🔱 ⚜️ 🔰 ♻️ ✅ 🈯 💹 ❇️ ✳️ ❎ 🌐 💠 Ⓜ️ 🌀 💤 🏧 🚾 ♿ 🅿️ 🛗 🈳 🈂️ 🛂 🛃 🛄 🛅 🚹 🚺 🚼 ⚧ 🚻 🚮 🎦 📶 🈁 🔣 ℹ️ 🔤 🔡 🔠 🆖 🆗 🆙 🆒 🆕 🆓 0️⃣ 1️⃣ 2️⃣ 3️⃣ 4️⃣ 5️⃣ 6️⃣ 7️⃣ 8️⃣ 9️⃣ 🔟 🔢 #️⃣ *️⃣ ⏏️ ▶️ ⏸ ⏯ ⏹ ⏺ ⏭ ⏮ ⏩ ⏪ ⏫ ⏬ ◀️ 🔼 🔽 ➡️ ⬅️ ⬆️ ⬇️ ↗️ ↘️ ↙️ ↖️ ↕️ ↔️ ↪️ ↩️ ⤴️ ⤵️ 🔀 🔁 🔂 🔄 🔃 🎵 🎶 ➕ ➖ ➗ ✖️ ♾ 💲 💱 ™️ ©️ ®️ 〰️ ➰ ➿ 🔚 🔙 🔛 🔝 🔜 ✔️ ☑️ 🔘 🔴 🟠 🟡 🟢 🔵 🟣 ⚫ ⚪ 🟤 🔺 🔻 🔸 🔹 🔶 🔷 🔳 🔲 ▪️ ▫️ ◼️ ◻️ ◾ ◽ ⬛ ⬜ 🟧 🟨 🟩 🟦 🟪 🟫 🔈 🔇 🔉 🔊 🔔 🔕 📣 📢 👁‍🗨 💬 💭 🗯 ♠️ ♣️ ♥️ ♦️ 🃏 🎴 🀄'.split(' '),
+    'Flags': '🏳️ 🏴 🏁 🚩 🏳️‍🌈 🏳️‍⚧️ 🏴‍☠️ 🇺🇸 🇬🇧 🇨🇦 🇦🇺 🇩🇪 🇫🇷 🇮🇹 🇪🇸 🇯🇵 🇰🇷 🇨🇳 🇮🇳 🇧🇷 🇲🇽 🇷🇺 🇿🇦 🇳🇬 🇪🇬 🇸🇦 🇦🇪 🇹🇷 🇮🇱 🇮🇩 🇵🇭 🇹🇭 🇻🇳 🇲🇾 🇸🇬 🇳🇿 🇮🇪 🇸🇪 🇳🇴 🇫🇮 🇩🇰 🇳🇱 🇧🇪 🇨🇭 🇦🇹 🇵🇱 🇨🇿 🇬🇷 🇵🇹 🇺🇦'.split(' '),
+  };
+
+  let currentEmojiCat = 'Smileys';
+
+  // ---------- Insert / control ----------
+  function insertText(text) {
+    const el = output;
+    el.focus();
+    const start = el.selectionStart ?? el.value.length;
+    const end = el.selectionEnd ?? el.value.length;
+    el.value = el.value.slice(0, start) + text + el.value.slice(end);
+    const pos = start + text.length;
+    el.setSelectionRange(pos, pos);
+  }
+
+  function replaceLast(text) {
+    const el = output;
+    el.focus();
+    const start = el.selectionStart ?? el.value.length;
+    if (start === 0) return insertText(text);
+    el.value = el.value.slice(0, start - 1) + text + el.value.slice(start);
+    const pos = start - 1 + text.length;
+    el.setSelectionRange(pos, pos);
+  }
+
+  function backspace() {
+    const el = output;
+    el.focus();
+    if (State.mode === 'pinyin' && State.pinyin.length > 0) {
+      State.pinyin = State.pinyin.slice(0, -1);
+      updateCandidates();
+      render();
+      return;
+    }
+    const start = el.selectionStart ?? el.value.length;
+    const end = el.selectionEnd ?? el.value.length;
+    if (start === end && start > 0) {
+      el.value = el.value.slice(0, start - 1) + el.value.slice(end);
+      el.setSelectionRange(start - 1, start - 1);
+    } else if (start !== end) {
+      el.value = el.value.slice(0, start) + el.value.slice(end);
+      el.setSelectionRange(start, start);
+    }
+    if (State.shift === false) {
+      autoCapCheck();
+      render();
+    }
+  }
+
+  function updateCandidates() {
+    if (State.pinyin.length === 0) {
+      State.candidates = [];
+      renderCandidates();
+      return;
+    }
+    const lc = State.pinyin.toLowerCase();
+    // Exact syllable match first
+    const exact = PINYIN_DATA[lc];
+    if (exact) {
+      State.candidates = [...exact];
+    } else {
+      // Prefix match — collect chars from all syllables that start with the typed prefix
+      const seen = new Set();
+      const matches = [];
+      for (const [syl, chars] of Object.entries(PINYIN_DATA)) {
+        if (syl.startsWith(lc)) {
+          for (const ch of chars) {
+            if (!seen.has(ch)) { seen.add(ch); matches.push(ch); }
+            if (matches.length >= 40) break;
+          }
+        }
+        if (matches.length >= 40) break;
+      }
+      State.candidates = matches.length > 0 ? matches : [State.pinyin];
+    }
+    renderCandidates();
+  }
+
+  function renderCandidates() {
+    const isChinese = State.mode === 'pinyin' || State.mode === 'handwriting';
+    if (isChinese) {
+      candidateBar.classList.add('visible');
+      candidateBar.innerHTML = '';
+      candidateBar.classList.toggle('empty', State.pinyin.length === 0 && State.mode === 'pinyin');
+      candidateBar.classList.toggle('hw-mode', State.mode === 'handwriting' && State.candidates.length === 0);
+
+      if (State.mode === 'handwriting') {
+        const notice = document.createElement('span');
+        notice.className = 'hw-notice';
+        notice.textContent = 'Recognition: Google';
+        candidateBar.appendChild(notice);
+      }
+
+      if (State.mode === 'pinyin' && State.pinyin.length > 0) {
+        const preedit = document.createElement('span');
+        preedit.className = 'pinyin-preedit';
+        preedit.textContent = State.pinyin;
+        candidateBar.appendChild(preedit);
+      }
+
+      const list = State.candidates;
+
+      if (State.mode === 'handwriting') {
+        if (State.hwTimer) clearTimeout(State.hwTimer);
+        State.hwTimer = setTimeout(() => {
+          if (State.mode === 'handwriting' && list[0]) {
+            insertText(list[0]);
+            clearHandwriting();
+            render();
+          }
+        }, 2000);
+      }
+
+      list.forEach(cand => {
+        const item = document.createElement('div');
+        item.className = 'candidate-item';
+        item.textContent = cand;
+        item.addEventListener('pointerdown', e => {
+          e.preventDefault();
+          if (State.hwTimer) clearTimeout(State.hwTimer);
+          insertText(cand);
+          State.pinyin = '';
+          if (State.mode === 'handwriting') clearHandwriting();
+          updateCandidates();
+          render();
+        });
+        candidateBar.appendChild(item);
+      });
+    } else {
+      candidateBar.classList.remove('visible');
+    }
+  }
+
+  function handleAction(action) {
+    if (action === 'shift') {
+      // 3-state cycle: off → on (single) → caps lock → off
+      if (!State.shift) State.shift = true;
+      else if (State.shift === true) State.shift = 'lock';
+      else State.shift = false;
+      render();
+    } else if (action === 'back') {
+      backspace();
+    } else if (action === 'space') {
+      if (State.mode === 'pinyin' && State.pinyin.length > 0) {
+        insertText(State.candidates[0] || State.pinyin);
+        State.pinyin = '';
+        updateCandidates();
+        render();
+      } else {
+        insertText(' ');
+        resetT9();
+        if (State.shift !== 'lock') State.shift = false;
+        autoCapCheck();
+        render();
+      }
+    } else if (action === 'clear-hw') {
+      clearHandwriting();
+    } else if (action === 'enter') {
+      insertText('\n');
+      resetT9();
+      if (State.shift !== 'lock') State.shift = false;
+      autoCapCheck();
+      render();
+    } else if (action === 'back-alpha') {
+      State.symbolsPage = 1;
+      setMode(State.prevAlphaMode);
+    } else if (action === 'cycle') {
+      // Globe toggles strictly between QWERTY and T9 (3x4)
+      setMode(State.mode === 'numpad' ? 'qwerty' : 'numpad');
+    } else if (action && action.startsWith('mode:')) {
+      const dest = action.slice(5);
+      if (dest === 'symbols' || dest === 'emoji') State.prevAlphaMode = State.mode;
+      State.symbolsPage = 1;
+      setMode(dest);
+    } else if (action && action.startsWith('sym-page:')) {
+      State.symbolsPage = parseInt(action.slice(9));
+      render();
+    }
+  }
+
+  function setMode(mode) {
+    State.mode = mode;
+    State.shift = false;
+    resetT9();
+    render();
+  }
+
+  function resetT9() {
+    if (State.t9.timer) clearTimeout(State.t9.timer);
+    State.t9 = { lastKey: null, index: 0, timer: null };
+  }
+
+  // Sets shift=true if cursor is at a sentence start (doesn't call render — caller does)
+  function autoCapCheck() {
+    if (!State.autoCap || State.shift !== false) return;
+    const val = output.value;
+    const pos = output.selectionStart ?? val.length;
+    const before = val.slice(0, pos);
+    if (before.length === 0 || /[.?!\n]\s*$/.test(before)) {
+      State.shift = true;
+    }
+  }
+
+  // ---------- Renderers ----------
+  function render() {
+    keyboard.innerHTML = '';
+    modeLabel.textContent = State.mode === 'qwerty'
+      ? (State.shift ? 'QWERTY ⇧' : 'QWERTY')
+      : State.mode === 'numpad' ? '3x4 T9'
+      : State.mode === 'symbols' ? '123/Symbols'
+      : State.mode === 'pinyin' ? 'Pinyin 拼'
+      : State.mode === 'handwriting' ? 'Handwriting 书'
+      : 'Emoji';
+
+    if (State.mode === 'qwerty') renderRows(QWERTY_ROWS);
+    else if (State.mode === 'symbols') renderRows(State.symbolsPage === 2 ? SYMBOLS2_ROWS : SYMBOLS_ROWS);
+    else if (State.mode === 'numpad') renderRows(NUMPAD_ROWS);
+    else if (State.mode === 'emoji') renderEmoji();
+    else if (State.mode === 'pinyin') renderRows(PINYIN_ROWS);
+    else if (State.mode === 'handwriting') renderHandwriting();
+
+    renderCandidates();
+  }
+
+  function renderRows(rows) {
+    rows.forEach(row => {
+      const rowEl = document.createElement('div');
+      rowEl.className = 'row';
+      row.forEach(item => rowEl.appendChild(buildKey(item)));
+      keyboard.appendChild(rowEl);
+    });
+  }
+
+  function renderHandwriting() {
+    const area = document.createElement('div');
+    area.className = 'handwriting-area';
+    const canvas = document.createElement('canvas');
+    canvas.id = 'handwriting-canvas';
+    canvas.style.display = 'block';
+    area.appendChild(canvas);
+    keyboard.appendChild(area);
+
+    // Bottom controls
+    const bottom = document.createElement('div');
+    bottom.className = 'row';
+    bottom.style.height = '50px';
+    bottom.appendChild(buildKey({label:'ABC', action:'mode:qwerty', cls:'special wide'}));
+    bottom.appendChild(buildKey({label:'space', action:'space', cls:'space'}));
+    bottom.appendChild(buildKey({label:'Clear', action:'clear-hw', cls:'special'}));
+    bottom.appendChild(buildKey({label:'⌫', action:'back', cls:'special wide'}));
+    keyboard.appendChild(bottom);
+
+    initHandwriting(canvas);
+  }
+
+  function buildKey(item) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'key';
+
+    if (typeof item === 'string') {
+      const ch = State.shift ? item.toUpperCase() : item;
+      btn.textContent = ch;
+      btn.addEventListener('pointerdown', e => { e.preventDefault(); pressLetter(item); });
+    } else if (item.type === 'shift') {
+      // Shift key — 3-state: off / on / caps-lock
+      if (item.cls) btn.className += ' ' + item.cls;
+      btn.textContent = State.shift === 'lock' ? '⇪' : '⇧';
+      if (State.shift === true)   btn.classList.add('shift-on');
+      if (State.shift === 'lock') btn.classList.add('shift-lock');
+      btn.addEventListener('pointerdown', e => { e.preventDefault(); handleAction('shift'); });
+    } else {
+      if (item.cls) btn.className += ' ' + item.cls;
+      if (item.cls && item.cls.includes('t9')) {
+        const main = document.createElement('span');
+        main.className = 'main';
+        main.textContent = item.label;
+        const sub = document.createElement('span');
+        sub.className = 'sub';
+        sub.textContent = item.sub || '';
+        btn.appendChild(main);
+        btn.appendChild(sub);
+      } else {
+        btn.textContent = State.shift && item.char && /[a-z]/.test(item.char)
+          ? item.char.toUpperCase()
+          : item.label;
+      }
+
+      // Spacebar swipe detection
+      if (item.action === 'space') {
+        const indicator = document.getElementById('swipe-indicator');
+        const MODE_LABELS = ['English', 'Pinyin 拼音', '手写 Handwriting'];
+        let slotEls = [];
+        let swStartX = 0;
+        let swHoldTimer = null;
+        let swInSwipeMode = false;
+        let swTargetIdx = chineseModeIdx;
+
+        function buildIndicator() {
+          indicator.innerHTML = '';
+          const track = document.createElement('div');
+          track.className = 'si-track';
+          slotEls = CHINESE_MODES.map((_, i) => {
+            const s = document.createElement('div');
+            s.className = 'si-mode' + (i === chineseModeIdx ? ' si-active' : '');
+            s.textContent = MODE_LABELS[i];
+            track.appendChild(s);
+            return s;
+          });
+          indicator.appendChild(track);
+        }
+
+        function positionIndicator() {
+          const r = btn.getBoundingClientRect();
+          indicator.style.display = 'block';
+          const h = indicator.offsetHeight || 44;
+          indicator.style.left = (r.left + r.width / 2) + 'px';
+          indicator.style.top  = (r.top - h - 12) + 'px';
+        }
+
+        function updateIndicator(dx) {
+          const dir = dx > 30 ? 1 : dx < -30 ? -1 : 0;
+          swTargetIdx = (chineseModeIdx + dir + CHINESE_MODES.length) % CHINESE_MODES.length;
+          slotEls.forEach((el, i) => el.classList.toggle('si-active', i === swTargetIdx));
+          // Damped track slide — max ±32 px
+          const slide = Math.max(-32, Math.min(32, dx * 0.22));
+          indicator.firstChild.style.transform = `translateX(${slide}px)`;
+        }
+
+        btn.addEventListener('pointerdown', e => {
+          e.preventDefault(); // blocks the generic handler below from also firing
+          swStartX = e.clientX;
+          swInSwipeMode = false;
+          swTargetIdx = chineseModeIdx;
+          clearTimeout(swHoldTimer);
+          // Show carousel only after holding 300 ms
+          swHoldTimer = setTimeout(() => {
+            swInSwipeMode = true;
+            buildIndicator();
+            positionIndicator();
+          }, 300);
+        });
+
+        btn.addEventListener('pointermove', e => {
+          if (!swInSwipeMode) return;
+          const dx = e.clientX - swStartX;
+          updateIndicator(dx);
+        });
+
+        btn.addEventListener('pointerup', e => {
+          clearTimeout(swHoldTimer);
+          indicator.style.display = 'none';
+          if (!swInSwipeMode) {
+            // Quick tap (released before hold delay) → insert space
+            handleAction('space');
+          } else if (swTargetIdx !== chineseModeIdx) {
+            // Held + swiped to a different slot → switch mode, no space
+            chineseModeIdx = swTargetIdx;
+            setMode(CHINESE_MODES[chineseModeIdx]);
+            e.preventDefault();
+            e.stopPropagation();
+          }
+          // Held but released at center → dismiss only, no space
+          swInSwipeMode = false;
+        });
+
+        btn.addEventListener('pointercancel', () => {
+          clearTimeout(swHoldTimer);
+          indicator.style.display = 'none';
+          swInSwipeMode = false;
+        });
+
+        // Label shows current mode
+        if (State.mode === 'pinyin' || State.mode === 'handwriting' || State.mode === 'qwerty') {
+          btn.textContent = State.mode === 'pinyin' ? 'Pinyin 拼音' : (State.mode === 'handwriting' ? '手写 Handwriting' : 'English');
+          btn.style.fontSize = '11px';
+        }
+      }
+
+      // Backspace: instant delete on tap, rapid-fire on hold.
+      // Uses module-level bkTimer/bkRepeat so they survive render() rebuilding this button.
+      // The interval does a lightweight delete (no render) so the button stays in the DOM
+      // and pointerup reliably fires on the same element.
+      if (item.action === 'back') {
+        btn.addEventListener('pointerdown', e => {
+          e.preventDefault();
+          stopBkRepeat();          // clear any leftover repeat from a previous press
+          backspace();             // first delete + render (may detach this btn element)
+          bkTimer = setTimeout(() => {
+            bkRepeat = setInterval(() => {
+              // Lightweight delete — no render() so DOM stays stable during repeat
+              if (State.mode === 'pinyin' && State.pinyin.length > 0) {
+                State.pinyin = State.pinyin.slice(0, -1);
+                clearTimeout(candidateFetchTimer);
+                if (State.pinyin.length === 0) State.candidates = [];
+                renderCandidates();   // update preedit display cheaply
+              } else {
+                const s = output.selectionStart ?? output.value.length;
+                if (s > 0) {
+                  output.value = output.value.slice(0, s - 1) + output.value.slice(s);
+                  output.setSelectionRange(s - 1, s - 1);
+                }
+              }
+            }, 40);
+          }, 400);
+        });
+        // stop fires on whatever button is current at lift time (may be a re-rendered clone)
+        const stop = () => {
+          const wasRepeating = bkRepeat !== null;
+          stopBkRepeat();
+          if (wasRepeating) render(); // one final render to sync UI after rapid delete
+        };
+        btn.addEventListener('pointerup',     stop);
+        btn.addEventListener('pointercancel', stop);
+        btn.addEventListener('pointerleave',  stop);
+      }
+
+      if (item.t9) {
+        // Short press → multi-tap cycle through letters.
+        // Long press (≥500 ms) → type the digit directly, skip cycling.
+        // pdReceived guard prevents ghost-tap when mode switches on pointerdown.
+        let lpTimer = null;
+        let lpFired = false;
+        let pdReceived = false;
+        btn.addEventListener('pointerdown', e => {
+          e.preventDefault();
+          pdReceived = true;
+          lpFired = false;
+          lpTimer = setTimeout(() => {
+            lpFired = true;
+            insertText(item.label);
+            resetT9();
+            btn.classList.add('pressed');
+          }, 500);
+        });
+        btn.addEventListener('pointerup', () => {
+          if (!pdReceived) return; // orphan pointerup from layout switch — ignore
+          pdReceived = false;
+          if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; }
+          btn.classList.remove('pressed');
+          if (!lpFired) pressT9(item.label, item.t9);
+        });
+        btn.addEventListener('pointercancel', () => {
+          pdReceived = false;
+          if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; }
+          btn.classList.remove('pressed');
+        });
+      } else if (item.action !== 'space' && item.action !== 'back') {
+        // 'space' and 'back' have dedicated handlers above that call e.preventDefault()
+        btn.addEventListener('pointerdown', e => {
+          e.preventDefault();
+          if (item.char !== undefined) {
+            insertText(item.char);
+            resetT9();
+            if (item.char === '.') {
+              insertText(' ');
+              if (State.shift !== 'lock') State.shift = false;
+              autoCapCheck();
+              render();
+            }
+          } else if (item.action) {
+            handleAction(item.action);
+            if (item.action !== 'shift') resetT9();
+          }
+        });
+      }
+    }
+    return btn;
+  }
+
+  function pressLetter(letter) {
+    if (State.mode === 'pinyin') {
+      State.pinyin += letter.toLowerCase();
+      updateCandidates();
+      render();
+      return;
+    }
+    const ch = State.shift ? letter.toUpperCase() : letter;
+    insertText(ch);
+    resetT9();
+    if (State.shift === true) State.shift = false;
+    autoCapCheck();
+    render();
+  }
+
+  function pressT9(keyId, options) {
+    if (State.t9.lastKey === keyId && State.t9.timer) {
+      // cycle
+      clearTimeout(State.t9.timer);
+      State.t9.index = (State.t9.index + 1) % options.length;
+      let ch = options[State.t9.index];
+      if (State.shift && /[a-z]/.test(ch)) ch = ch.toUpperCase();
+      replaceLast(ch);
+    } else {
+      State.t9.lastKey = keyId;
+      State.t9.index = 0;
+      let ch = options[0];
+      if (State.shift && /[a-z]/.test(ch)) ch = ch.toUpperCase();
+      insertText(ch);
+    }
+    State.t9.timer = setTimeout(() => {
+      resetT9();
+      // auto-space if the committed T9 character was a period
+      const val = output.value;
+      const pos = output.selectionStart ?? val.length;
+      if (val.slice(0, pos).endsWith('.')) insertText(' ');
+      if (State.shift === true) State.shift = false;
+      autoCapCheck();
+      render();
+    }, 900);
+  }
+
+  function renderEmoji() {
+    const panel = document.createElement('div');
+    panel.className = 'emoji-panel';
+
+    const tabs = document.createElement('div');
+    tabs.className = 'emoji-tabs';
+    const CAT_ICONS = { Smileys:'😀', People:'👋', Animals:'🐶', Food:'🍔', Activities:'⚽', Travel:'🚗', Objects:'📱', Symbols:'❤️', Flags:'🚩' };
+    Object.keys(EMOJI).forEach(cat => {
+      const t = document.createElement('button');
+      t.type = 'button';
+      t.className = 'emoji-tab' + (cat === currentEmojiCat ? ' active' : '');
+      t.textContent = CAT_ICONS[cat] || EMOJI[cat][0];
+      t.title = cat;
+      t.addEventListener('pointerdown', e => {
+        e.preventDefault();
+        currentEmojiCat = cat;
+        render();
+      });
+      tabs.appendChild(t);
+    });
+
+    const isFlags = currentEmojiCat === 'Flags';
+    const grid = document.createElement('div');
+    grid.className = 'emoji-grid';
+    EMOJI[currentEmojiCat].forEach(emoji => {
+      if (!emoji) return;
+      const cell = document.createElement('button');
+      cell.type = 'button';
+      cell.className = 'emoji-cell';
+      if (isFlags) {
+        // Country flags don't render on Windows Chrome — use Twemoji images
+        const codepoints = [...emoji].map(c => c.codePointAt(0).toString(16)).join('-');
+        const img = document.createElement('img');
+        img.src = 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0/assets/svg/' + codepoints + '.svg';
+        img.width = 28;
+        img.height = 28;
+        img.alt = emoji;
+        img.onerror = () => { img.remove(); cell.textContent = emoji; }; // fallback
+        cell.appendChild(img);
+      } else {
+        cell.textContent = emoji;
+      }
+      cell.addEventListener('pointerdown', e => {
+        e.preventDefault();
+        insertText(emoji);
+      });
+      grid.appendChild(cell);
+    });
+
+    const bottom = document.createElement('div');
+    bottom.className = 'emoji-bottom';
+    const num = document.createElement('button');
+    num.type = 'button';
+    num.className = 'key special wide';
+    num.textContent = State.prevAlphaMode === 'numpad' ? '123' : 'ABC';
+    num.addEventListener('pointerdown', e => { e.preventDefault(); setMode(State.prevAlphaMode); });
+    const space = document.createElement('button');
+    space.type = 'button';
+    space.className = 'key space';
+    space.textContent = 'space';
+    space.addEventListener('pointerdown', e => { e.preventDefault(); insertText(' '); });
+    const bks = document.createElement('button');
+    bks.type = 'button';
+    bks.className = 'key special';
+    bks.textContent = '⌫';
+    bks.addEventListener('pointerdown', e => { e.preventDefault(); backspace(); });
+    const ent = document.createElement('button');
+    ent.type = 'button';
+    ent.className = 'key accent wide';
+    ent.textContent = '↵';
+    ent.addEventListener('pointerdown', e => { e.preventDefault(); insertText('\n'); });
+
+    bottom.appendChild(num);
+    bottom.appendChild(space);
+    bottom.appendChild(bks);
+    bottom.appendChild(ent);
+
+    panel.appendChild(tabs);
+    // Country flags need platform emoji rendering — they display as images on Android/iOS,
+    // but as two-letter codes on Windows Chrome (OS limitation, not a code issue).
+    if (currentEmojiCat === 'Flags') {
+      const note = document.createElement('div');
+      note.style.cssText = 'font-size:11px;color:#6b7280;text-align:center;padding:2px 4px;';
+      note.textContent = '🏁 Country flags render as flag images on Android';
+      panel.appendChild(note);
+    }
+    panel.appendChild(grid);
+    keyboard.appendChild(panel);
+    keyboard.appendChild(bottom);
+  }
+
+  // ---------- Resize ----------
+  let resizeStart = null;
+  function startResize(e) {
+    e.preventDefault();
+    const y = e.touches ? e.touches[0].clientY : e.clientY;
+    const current = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--kbd-height')) || 320;
+    resizeStart = { y, height: current };
+    document.addEventListener('pointermove', doResize);
+    document.addEventListener('pointerup', endResize);
+  }
+  function doResize(e) {
+    if (!resizeStart) return;
+    const y = e.touches ? e.touches[0].clientY : e.clientY;
+    const delta = resizeStart.y - y;
+    let next = Math.max(180, Math.min(window.innerHeight * 0.75, resizeStart.height + delta));
+    document.documentElement.style.setProperty('--kbd-height', next + 'px');
+    try { localStorage.setItem('kbd101.height', String(next)); } catch (_) {}
+    // Keep slider in sync if popup is open
+    const sl = document.getElementById('size-slider');
+    const lb = document.getElementById('size-label');
+    if (sl) { sl.value = next; lb.textContent = Math.round(next) + 'px'; }
+  }
+  function endResize() {
+    resizeStart = null;
+    document.removeEventListener('pointermove', doResize);
+    document.removeEventListener('pointerup', endResize);
+  }
+  resizer.addEventListener('pointerdown', e => {
+    if (e.target.id === 'settings-gear-btn') return; // don't start resize from gear btn
+    startResize(e);
+  });
+
+  // Prevent the textarea from losing focus when keys are tapped
+  keyboard.addEventListener('pointerdown', e => {
+    if (e.target !== output) e.preventDefault();
+  });
+
+  // Block native mobile keyboard from opening
+  output.addEventListener('focus', () => {
+    output.setAttribute('readonly', 'readonly');
+    setTimeout(() => output.removeAttribute('readonly'), 50);
+  });
+  output.addEventListener('touchstart', e => { e.preventDefault(); output.blur(); });
+
+  render();
+
+  // ---------- Theme ----------
+  function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    const btn = document.getElementById('popup-theme-btn');
+    if (btn) btn.textContent = theme === 'light' ? '🌙 Dark mode' : '☀️ Light mode';
+    try { localStorage.setItem('kbd101.theme', theme); } catch (_) {}
+  }
+  document.getElementById('popup-theme-btn').addEventListener('click', () => {
+    const current = document.documentElement.getAttribute('data-theme') || 'dark';
+    applyTheme(current === 'dark' ? 'light' : 'dark');
+  });
+  try {
+    const saved = localStorage.getItem('kbd101.theme');
+    if (saved) applyTheme(saved);
+  } catch (_) {}
+
+  // ---------- Settings popup ----------
+  const gearBtn = document.getElementById('settings-gear-btn');
+  const popup = document.getElementById('settings-popup');
+  const sizeSlider = document.getElementById('size-slider');
+  const sizeLabel = document.getElementById('size-label');
+
+  function positionPopup() {
+    const resizerRect = document.getElementById('resizer').getBoundingClientRect();
+    popup.style.bottom = (window.innerHeight - resizerRect.top + 4) + 'px';
+  }
+
+  function syncSlider() {
+    const h = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--kbd-height')) || 320;
+    sizeSlider.value = h;
+    sizeLabel.textContent = h + 'px';
+  }
+
+  gearBtn.addEventListener('pointerdown', e => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (popup.classList.contains('open')) {
+      popup.classList.remove('open');
+    } else {
+      syncSlider();
+      positionPopup();
+      popup.classList.add('open');
+    }
+  });
+
+  document.addEventListener('pointerdown', e => {
+    if (popup.classList.contains('open') && !popup.contains(e.target) && e.target !== gearBtn) {
+      popup.classList.remove('open');
+    }
+  });
+
+  sizeSlider.addEventListener('input', () => {
+    const val = parseInt(sizeSlider.value);
+    sizeLabel.textContent = val + 'px';
+    document.documentElement.style.setProperty('--kbd-height', val + 'px');
+    try { localStorage.setItem('kbd101.height', String(val)); } catch (_) {}
+    positionPopup();
+  });
+
+  document.getElementById('popup-settings-btn').addEventListener('click', () => {
+    alert('On Android: open System Settings → Language & Input → On-screen Keyboard → Keyboard101');
+  });
+
+  // Restore saved height
+  try {
+    const saved = parseInt(localStorage.getItem('kbd101.height'));
+    if (saved && saved > 100) document.documentElement.style.setProperty('--kbd-height', saved + 'px');
+  } catch (_) {}
+
+  // ---------- Auto-cap toggle ----------
+  const autoCapBtn = document.getElementById('popup-autocap-btn');
+  function updateAutoCapBtn() {
+    autoCapBtn.textContent = State.autoCap ? 'On' : 'Off';
+    autoCapBtn.style.opacity = State.autoCap ? '1' : '0.5';
+  }
+  autoCapBtn.addEventListener('click', () => {
+    State.autoCap = !State.autoCap;
+    updateAutoCapBtn();
+    try { localStorage.setItem('kbd101.autoCap', State.autoCap ? '1' : '0'); } catch (_) {}
+    autoCapCheck(); render();
+  });
+  try {
+    const saved = localStorage.getItem('kbd101.autoCap');
+    if (saved !== null) State.autoCap = saved === '1';
+  } catch (_) {}
+  updateAutoCapBtn();
+
+  // Initial auto-cap check (empty field on load)
+  autoCapCheck(); if (State.shift) render();
+
+  // ---------- Handwriting ----------
+  let hwCtx = null;
+  let hwDrawing = false;
+  let hwStrokes = [];       // array of strokes; each stroke = {xs, ys, ts}
+  let hwCurrentStroke = null;
+  let hwRecogTimer = null;
+
+  function initHandwriting(canvas) {
+    const rect = canvas.parentElement.getBoundingClientRect();
+    canvas.width = rect.width;
+    canvas.height = rect.height;
+    hwCtx = canvas.getContext('2d');
+    hwCtx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--key-text');
+    hwCtx.lineWidth = 4;
+    hwCtx.lineCap = 'round';
+    hwCtx.lineJoin = 'round';
+    hwStrokes = [];
+
+    canvas.addEventListener('pointerdown', e => {
+      canvas.setPointerCapture(e.pointerId);
+      hwDrawing = true;
+      const r = canvas.getBoundingClientRect();
+      const x = e.clientX - r.left;
+      const y = e.clientY - r.top;
+      hwCurrentStroke = { xs: [x], ys: [y], ts: [Date.now()] };
+      hwCtx.beginPath();
+      hwCtx.moveTo(x, y);
+    });
+
+    canvas.addEventListener('pointermove', e => {
+      if (!hwDrawing) return;
+      const r = canvas.getBoundingClientRect();
+      const x = e.clientX - r.left;
+      const y = e.clientY - r.top;
+      hwCurrentStroke.xs.push(x);
+      hwCurrentStroke.ys.push(y);
+      hwCurrentStroke.ts.push(Date.now());
+      hwCtx.lineTo(x, y);
+      hwCtx.stroke();
+    });
+
+    canvas.addEventListener('pointerup', () => {
+      if (!hwDrawing) return;
+      hwDrawing = false;
+      if (hwCurrentStroke && hwCurrentStroke.xs.length > 0) {
+        hwStrokes.push(hwCurrentStroke);
+        hwCurrentStroke = null;
+      }
+      // Debounce recognition 600ms after last stroke lift
+      clearTimeout(hwRecogTimer);
+      hwRecogTimer = setTimeout(() => runHandwritingRecognition(canvas), 600);
+    });
+  }
+
+  async function runHandwritingRecognition(canvas) {
+    if (hwStrokes.length === 0) return;
+    const ink = hwStrokes.map(s => [s.xs, s.ys, s.ts]);
+    try {
+      const resp = await fetch('https://inputtools.google.com/request?itc=zh-t-i0-handwrit&num=15', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          options: 'enable_pre_space',
+          requests: [{
+            language: 'zh',
+            writing_guide: { writing_area_width: canvas.width, writing_area_height: canvas.height },
+            ink,
+            pre_context: ''
+          }]
+        })
+      });
+      const data = await resp.json();
+      if (data[0] === 'SUCCESS' && data[1]?.[0]?.[1]) {
+        State.candidates = data[1][0][1].filter(Boolean);
+      } else {
+        State.candidates = [];
+      }
+    } catch (e) {
+      State.candidates = [];
+    }
+    renderCandidates();
+  }
+
+  function clearHandwriting() {
+    const canvas = document.getElementById('handwriting-canvas');
+    if (canvas && hwCtx) {
+      hwCtx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+    hwStrokes = [];
+    hwCurrentStroke = null;
+    clearTimeout(hwRecogTimer);
+    State.candidates = [];
+  }
+})();
+</script>
+</body>
+</html>
