@@ -137,6 +137,34 @@ public class KeyboardView extends LinearLayout {
     // controls whether the candidate bar should say "no match" vs "draw…".
     private boolean hwHasAttempt = false;
     private final Handler hwUiHandler = new Handler(Looper.getMainLooper());
+    private final Handler autoCommitHandler = new Handler(Looper.getMainLooper());
+    private final Runnable autoCommitRunnable = () -> {
+        try {
+            if (mode != Mode.HANDWRITING) return;
+            if (hwCandidates.isEmpty()) return;
+            if (!isAttachedToWindow()) return;
+            String top = hwCandidates.get(0);
+            listener.onText(top);
+            // Reset the handwriting surface and candidate state for the next char.
+            for (int i = 0; keyboardArea != null && i < keyboardArea.getChildCount(); i++) {
+                View v = keyboardArea.getChildAt(i);
+                if (v instanceof HandwritingView) {
+                    ((HandwritingView) v).clear();
+                    break;
+                }
+            }
+            hwCandidates.clear();
+            hwHasAttempt = false;
+            updateCandidates();
+        } catch (Throwable ignored) {}
+    };
+    private void cancelAutoCommit() {
+        autoCommitHandler.removeCallbacks(autoCommitRunnable);
+    }
+    private void scheduleAutoCommit() {
+        autoCommitHandler.removeCallbacks(autoCommitRunnable);
+        autoCommitHandler.postDelayed(autoCommitRunnable, 2000);
+    }
 
     // Backspace hold-to-repeat
     private final Handler bkRepeatHandler = new Handler(Looper.getMainLooper());
@@ -224,6 +252,7 @@ public class KeyboardView extends LinearLayout {
      * pending fetches. Called by the IME service from onStartInputView.
      */
     public void resetTransientState() {
+        cancelAutoCommit();
         pinyinBuffer = "";
         pinyinCandidates.clear();
         pinyinFetchHandler.removeCallbacksAndMessages(null);
@@ -454,9 +483,10 @@ public class KeyboardView extends LinearLayout {
         keyboardArea.addView(hw);
 
         LinearLayout row4 = newRow();
-        row4.addView(specialKey("ABC", 1.5f, v -> { mode = Mode.QWERTY; render(); }));
+        row4.addView(specialKey("ABC", 1.5f, v -> { cancelAutoCommit(); mode = Mode.QWERTY; lastEnglishMode = Mode.QWERTY; render(); }));
         row4.addView(spaceKey(5f));
         row4.addView(specialKey("Clear", 1.5f, v -> {
+            cancelAutoCommit();
             hw.clear();
             hwCandidates.clear();
             hwHasAttempt = false;
@@ -586,6 +616,7 @@ public class KeyboardView extends LinearLayout {
         tv.setGravity(Gravity.CENTER);
         tv.setOnClickListener(v -> {
             pinyinFetchHandler.removeCallbacksAndMessages(null);
+            cancelAutoCommit();
             listener.onText(cand);
             pinyinBuffer = "";
             pinyinCandidates.clear();
@@ -949,6 +980,7 @@ public class KeyboardView extends LinearLayout {
                             }
                         } else if (targetIdx != chineseModeIdx) {
                             // Held + swiped — switch mode, no space
+                            cancelAutoCommit();
                             chineseModeIdx = targetIdx;
                             mode = chineseModeAt(chineseModeIdx);
                             render();
@@ -1116,6 +1148,7 @@ public class KeyboardView extends LinearLayout {
     }
 
     private void doBackspace() {
+        cancelAutoCommit();
         if (mode == Mode.PINYIN && pinyinBuffer.length() > 0) {
             pinyinBuffer = pinyinBuffer.substring(0, pinyinBuffer.length() - 1);
             pinyinCandidates.clear();
@@ -1413,6 +1446,7 @@ public class KeyboardView extends LinearLayout {
                         activeStroke.addPoint(Ink.Point.create(x, y, t));
                         drawPath.moveTo(x, y);
                         recognizeHandler.removeCallbacksAndMessages(null);
+                        cancelAutoCommit();
                         break;
                     case MotionEvent.ACTION_MOVE:
                         if (activeStroke != null) activeStroke.addPoint(Ink.Point.create(x, y, t));
@@ -1456,6 +1490,9 @@ public class KeyboardView extends LinearLayout {
                             }
                             hwHasAttempt = true;
                             updateCandidates();
+                            // Arm the 2-second auto-commit. Any new stroke, candidate
+                            // tap, mode switch, or Clear cancels this timer.
+                            if (!hwCandidates.isEmpty()) scheduleAutoCommit();
                         } catch (Throwable t) {
                             Log.w("KeyS", "Ink recognition handler failed", t);
                         }
