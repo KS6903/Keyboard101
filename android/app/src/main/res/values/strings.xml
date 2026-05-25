@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Keyboard101</string>
-    <string name="ime_label">Keyboard101</string>
+    <string name="app_name">KeyS</string>
+    <string name="ime_label">KeyS</string>
     <string name="app_tagline">A free QWERTY + 3x4 keyboard with emoji, resizable to your liking.</string>
-    <string name="setup_step_1">Step 1: Enable Keyboard101 in system settings.</string>
-    <string name="setup_step_2">Step 2: Switch your active keyboard to Keyboard101.</string>
+    <string name="setup_step_1">Step 1: Enable KeyS in system settings.</string>
+    <string name="setup_step_2">Step 2: Switch your active keyboard to KeyS.</string>
     <string name="btn_enable">Open Input Method Settings</string>
-    <string name="btn_switch">Choose Keyboard101</string>
+    <string name="btn_switch">Choose KeyS</string>
     <string name="setup_status_template">Tip: drag the small bar at the top of the keyboard to resize.</string>
     <string name="test_hint">Tap here and start typing to test the keyboard…</string>
     <string name="setup_theme">Theme</string>

@@ -7,7 +7,18 @@
       "Bash(where py *)",
       "Bash(/c/Python314/python.exe -c ' *)",
       "Bash(Get-ChildItem -Path \"d:\\\\Keyboard proj\\\\Keyboard101\" -Recurse -Include \"*.java\", \"*.gradle\", \"AndroidManifest.xml\", \"*.html\")",
-      "Bash(Select-Object FullName)"
+      "Bash(Select-Object FullName)",
+      "Bash(gradlew.bat assembleDebug)",
+      "PowerShell(Copy-Item \"d:\\\\Keyboard proj\\\\Keyboard101\\\\android\\\\app\\\\build\\\\outputs\\\\apk\\\\debug\\\\app-debug.apk\" \"d:\\\\Keyboard proj\\\\Keyboard101\\\\Keyboard101.apk\" -Force)",
+      "Bash(Get-ChildItem -Path \"d:\\\\Keyboard proj\\\\Keyboard101\" -Recurse -ErrorAction SilentlyContinue)",
+      "Bash(ConvertTo-Csv -NoTypeInformation)",
+      "Bash(Out-String)",
+      "PowerShell(Get-ChildItem -Path \"d:\\\\Keyboard proj\\\\Keyboard101\" -Recurse -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })",
+      "PowerShell(head -100)",
+      "PowerShell(Get-ChildItem -Path \"d:\\\\Keyboard proj\\\\Keyboard101\" -ErrorAction SilentlyContinue | ForEach-Object { if \\($_.PSIsContainer\\) { \"[DIR] \" + $_.Name } else { $_.Name } })",
+      "PowerShell(Get-ChildItem -Path \"d:\\\\Keyboard proj\\\\Keyboard101\\\\android\\\\app\\\\src\\\\main\" -ErrorAction SilentlyContinue | ForEach-Object { if \\($_.PSIsContainer\\) { \"[DIR] \" + $_.Name } else { $_.Name } })",
+      "PowerShell(Get-ChildItem -Path \"d:\\\\Keyboard proj\\\\Keyboard101\\\\android\" -ErrorAction SilentlyContinue | ForEach-Object { if \\($_.PSIsContainer\\) { \"[DIR] \" + $_.Name } else { $_.Name } })",
+      "PowerShell(Get-ChildItem -Path \"d:\\\\Keyboard proj\\\\Keyboard101\\\\android\\\\app\\\\src\" -Recurse -ErrorAction SilentlyContinue | Where-Object { !$_.PSIsContainer } | Select-Object FullName | ConvertTo-Csv -NoTypeInformation | Select-Object -First 100)"
     ]
   }
 }
