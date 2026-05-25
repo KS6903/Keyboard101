@@ -147,6 +147,9 @@ public class KeyboardView extends LinearLayout {
     private Runnable bkRepeatRunnable;
     private boolean bkRepeating = false;
 
+    // Key press preview popup
+    private PopupWindow keyPreviewPopup;
+
     // Mode-swipe popup carousel
     private PopupWindow modeSwipePopup;
     private LinearLayout modeSwipeTrack;
@@ -347,7 +350,10 @@ public class KeyboardView extends LinearLayout {
         });
         content.addView(settingsBtn);
 
-        pw.showAsDropDown(anchor, 0, 0, Gravity.START);
+        content.measure(
+            View.MeasureSpec.makeMeasureSpec(dp(260), View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+        pw.showAsDropDown(anchor, 0, -(content.getMeasuredHeight() + anchor.getHeight()), Gravity.START);
     }
 
     private void buildKeyboardArea() {
@@ -853,6 +859,7 @@ public class KeyboardView extends LinearLayout {
         final String display = isUpper ? letter.toUpperCase() : letter;
         Button b = baseKey(display, cKey(), 1f);
         b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+        addKeyPreview(b, display);
         b.setOnClickListener(v -> {
             if (mode == Mode.PINYIN) {
                 pinyinBuffer += letter.toLowerCase();
@@ -1014,7 +1021,7 @@ public class KeyboardView extends LinearLayout {
         int popW = card.getMeasuredWidth();
         int popH = card.getMeasuredHeight();
         int xOff = (anchor.getWidth() - popW) / 2;
-        int yOff = -(popH + dp(12));
+        int yOff = -(popH + anchor.getHeight() + dp(8));
         modeSwipePopup.showAsDropDown(anchor, xOff, yOff, Gravity.NO_GRAVITY);
     }
 
@@ -1046,6 +1053,44 @@ public class KeyboardView extends LinearLayout {
             modeSwipePopup.dismiss();
         }
         modeSwipePopup = null;
+    }
+
+    private void showKeyPreview(View anchor, String text) {
+        hideKeyPreview();
+        TextView tv = new TextView(getContext());
+        tv.setText(text);
+        tv.setTextColor(cText());
+        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 24);
+        tv.setGravity(Gravity.CENTER);
+        tv.setBackground(roundedBg(darkTheme ? 0xFF4B5563 : 0xFFCBD5E1));
+        tv.setPadding(dp(10), dp(6), dp(10), dp(6));
+        tv.measure(View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+                   View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+        int popW = Math.max(tv.getMeasuredWidth(), anchor.getWidth());
+        int popH = tv.getMeasuredHeight();
+        keyPreviewPopup = new PopupWindow(tv, popW, ViewGroup.LayoutParams.WRAP_CONTENT);
+        keyPreviewPopup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        keyPreviewPopup.setOutsideTouchable(false);
+        keyPreviewPopup.setFocusable(false);
+        int xOff = (anchor.getWidth() - popW) / 2;
+        int yOff = -(popH + anchor.getHeight() + dp(4));
+        keyPreviewPopup.showAsDropDown(anchor, xOff, yOff, Gravity.NO_GRAVITY);
+    }
+
+    private void hideKeyPreview() {
+        if (keyPreviewPopup != null && keyPreviewPopup.isShowing()) keyPreviewPopup.dismiss();
+        keyPreviewPopup = null;
+    }
+
+    private void addKeyPreview(View key, String label) {
+        key.setOnTouchListener((v, event) -> {
+            switch (event.getAction()) {
+                case MotionEvent.ACTION_DOWN:  showKeyPreview(v, label); break;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL: hideKeyPreview(); break;
+            }
+            return false;
+        });
     }
 
     private void doBackspace() {
@@ -1098,6 +1143,7 @@ public class KeyboardView extends LinearLayout {
     private Button charKey(final String ch) {
         Button b = baseKey(ch, cKey(), 1f);
         b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+        addKeyPreview(b, ch);
         b.setOnClickListener(v -> {
             listener.onText(ch);
             haptic(v);
@@ -1392,28 +1438,31 @@ public class KeyboardView extends LinearLayout {
         private void runRecognition() {
             if (mode != Mode.HANDWRITING) return;
             if (!hwModelReady || hwRecognizer == null || completedStrokes.isEmpty()) return;
+            if (viewWidth <= 0 || viewHeight <= 0) return;
             Ink.Builder inkBuilder = Ink.builder();
             for (Ink.Stroke.Builder sb : completedStrokes) inkBuilder.addStroke(sb.build());
 
-            // Giving ML Kit the actual canvas dimensions improves character recognition
-            // because the model can normalise stroke proportions correctly.
             RecognitionContext ctx = RecognitionContext.builder()
                 .setWritingArea(new WritingArea(viewWidth, viewHeight))
                 .build();
 
-            hwRecognizer.recognize(inkBuilder.build(), ctx)
-                .addOnSuccessListener(result -> {
-                    if (!isAttachedToWindow()) return;
-                    hwCandidates.clear();
-                    for (RecognitionCandidate c : result.getCandidates()) {
-                        String text = c.getText();
-                        if (text != null && !text.trim().isEmpty()) hwCandidates.add(text);
-                        if (hwCandidates.size() >= 15) break;
-                    }
-                    updateCandidates();
-                })
-                .addOnFailureListener(e ->
-                    Log.w("Keyboard101", "Ink recognition failed: " + e.getMessage()));
+            try {
+                hwRecognizer.recognize(inkBuilder.build(), ctx)
+                    .addOnSuccessListener(result -> {
+                        if (!isAttachedToWindow()) return;
+                        hwCandidates.clear();
+                        for (RecognitionCandidate c : result.getCandidates()) {
+                            String text = c.getText();
+                            if (text != null && !text.trim().isEmpty()) hwCandidates.add(text);
+                            if (hwCandidates.size() >= 15) break;
+                        }
+                        updateCandidates();
+                    })
+                    .addOnFailureListener(e ->
+                        Log.w("KeyS", "Ink recognition failed: " + e.getMessage()));
+            } catch (Exception e) {
+                Log.w("KeyS", "Handwriting recognition error: " + e.getMessage());
+            }
         }
     }
 

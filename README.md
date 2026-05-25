@@ -42,7 +42,7 @@ A debug APK is also written to:
 android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-You can copy that `.apk` to your phone and install it directly (enable "Install from unknown sources").
+The root-level `KeyS.apk` is a copy of this file ready to sideload. You can copy it to your phone and install it directly (enable "Install from unknown sources").
 
 ### Option B — Command-line build
 

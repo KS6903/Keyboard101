@@ -18,7 +18,8 @@
       "PowerShell(Get-ChildItem -Path \"d:\\\\Keyboard proj\\\\Keyboard101\" -ErrorAction SilentlyContinue | ForEach-Object { if \\($_.PSIsContainer\\) { \"[DIR] \" + $_.Name } else { $_.Name } })",
       "PowerShell(Get-ChildItem -Path \"d:\\\\Keyboard proj\\\\Keyboard101\\\\android\\\\app\\\\src\\\\main\" -ErrorAction SilentlyContinue | ForEach-Object { if \\($_.PSIsContainer\\) { \"[DIR] \" + $_.Name } else { $_.Name } })",
       "PowerShell(Get-ChildItem -Path \"d:\\\\Keyboard proj\\\\Keyboard101\\\\android\" -ErrorAction SilentlyContinue | ForEach-Object { if \\($_.PSIsContainer\\) { \"[DIR] \" + $_.Name } else { $_.Name } })",
-      "PowerShell(Get-ChildItem -Path \"d:\\\\Keyboard proj\\\\Keyboard101\\\\android\\\\app\\\\src\" -Recurse -ErrorAction SilentlyContinue | Where-Object { !$_.PSIsContainer } | Select-Object FullName | ConvertTo-Csv -NoTypeInformation | Select-Object -First 100)"
+      "PowerShell(Get-ChildItem -Path \"d:\\\\Keyboard proj\\\\Keyboard101\\\\android\\\\app\\\\src\" -Recurse -ErrorAction SilentlyContinue | Where-Object { !$_.PSIsContainer } | Select-Object FullName | ConvertTo-Csv -NoTypeInformation | Select-Object -First 100)",
+      "PowerShell(Rename-Item \"d:\\\\Keyboard proj\\\\Keyboard101\\\\Keyboard101.apk\" \"KeyS.apk\")"
     ]
   }
 }
