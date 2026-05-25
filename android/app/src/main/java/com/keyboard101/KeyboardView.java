@@ -133,9 +133,13 @@ public class KeyboardView extends LinearLayout {
     private boolean hwModelReady = false;
     private DigitalInkRecognizer hwRecognizer;
     private boolean hwInitializing = false;
+    // Set true once the user has lifted a stroke that ran through recognition;
+    // controls whether the candidate bar should say "no match" vs "draw…".
+    private boolean hwHasAttempt = false;
     // Latched on after a hard recognition failure — prevents repeated native
     // crashes for the rest of the session.
     private boolean hwDisabled = false;
+    private final Handler hwUiHandler = new Handler(Looper.getMainLooper());
 
     // Backspace hold-to-repeat
     private final Handler bkRepeatHandler = new Handler(Looper.getMainLooper());
@@ -434,6 +438,7 @@ public class KeyboardView extends LinearLayout {
         row4.addView(specialKey("Clear", 1.5f, v -> {
             hw.clear();
             hwCandidates.clear();
+            hwHasAttempt = false;
             updateCandidates();
         }));
         row4.addView(backspaceKey(1.5f));
@@ -488,6 +493,13 @@ public class KeyboardView extends LinearLayout {
             Log.w("KeyS", "Failed to create recognizer", t);
         }
         hwInitializing = false;
+        // If the user is sitting in handwriting mode while we initialized,
+        // refresh the candidate bar so the "Loading…" hint flips to "Draw…".
+        hwUiHandler.post(() -> {
+            try {
+                if (mode == Mode.HANDWRITING && isAttachedToWindow()) updateCandidates();
+            } catch (Throwable ignored) {}
+        });
     }
 
     private void updateCandidates() {
@@ -522,7 +534,12 @@ public class KeyboardView extends LinearLayout {
                     }
                 } else {
                     TextView hint = new TextView(getContext());
-                    hint.setText("Draw a character below...");
+                    String label;
+                    if (hwDisabled)          label = "Handwriting unavailable";
+                    else if (!hwModelReady)  label = "Loading handwriting…";
+                    else if (hwHasAttempt)   label = "No match — try again";
+                    else                     label = "Draw a character below...";
+                    hint.setText(label);
                     hint.setTextColor(cTextDim());
                     hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
                     candidateBar.addView(hint);
@@ -553,6 +570,7 @@ public class KeyboardView extends LinearLayout {
             pinyinBuffer = "";
             pinyinCandidates.clear();
             hwCandidates.clear();
+            hwHasAttempt = false;
             // Trigger clear in HandwritingView
             for (int i = 0; i < keyboardArea.getChildCount(); i++) {
                 View hv = keyboardArea.getChildAt(i);
@@ -1411,6 +1429,7 @@ public class KeyboardView extends LinearLayout {
                                 if (text != null && !text.trim().isEmpty()) hwCandidates.add(text);
                                 if (hwCandidates.size() >= 15) break;
                             }
+                            hwHasAttempt = true;
                             updateCandidates();
                         } catch (Throwable t) {
                             Log.w("KeyS", "Ink recognition handler failed", t);

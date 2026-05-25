@@ -10,7 +10,9 @@
       "Read(//c/Users/Zhupin/AppData/Local/Android/Sdk/**)",
       "Read(//c/Program Files/Java/**)",
       "Bash(./gradlew.bat assembleDebug)",
-      "Bash(./gradlew.bat compileDebugJavaWithJavac)"
+      "Bash(./gradlew.bat compileDebugJavaWithJavac)",
+      "Bash(cp \"app/build/outputs/apk/debug/app-debug.apk\" \"../KeyS.apk\")",
+      "Read(//d/Keyboard proj/**)"
     ]
   }
 }
