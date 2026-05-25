@@ -132,7 +132,6 @@ public class KeyboardView extends LinearLayout {
     private final List<String> hwCandidates = new ArrayList<>();
     private boolean hwModelReady = false;
     private DigitalInkRecognizer hwRecognizer;
-    private String hwStatusText = null;
     private boolean hwInitializing = false;
     private final Handler autoCommitHandler = new Handler(Looper.getMainLooper());
     private final Runnable autoCommitRunnable = () -> {
@@ -198,6 +197,9 @@ public class KeyboardView extends LinearLayout {
             applySavedHeight();
             autoCapCheck();
             render();
+            // Start the handwriting model load silently so it's ready by the
+            // time the user (maybe) opens Handwriting mode.
+            initHandwritingRecognizer();
         } catch (Throwable t) {
             Log.w("KeyS", "KeyboardView init failed", t);
         }
@@ -451,66 +453,42 @@ public class KeyboardView extends LinearLayout {
         keyboardArea.addView(row4);
     }
 
+    /**
+     * Fires the ML Kit handwriting model load entirely in the background.
+     * No UI status updates — the only observable side-effect is hwModelReady
+     * flipping to true once the recognizer is built. Recognition naturally
+     * no-ops while the flag is false (see runRecognition), so the user just
+     * sees an empty candidate bar with the static "Draw a character below…"
+     * hint until the model finishes loading.
+     */
     private void initHandwritingRecognizer() {
-        if (hwInitializing) return;
+        if (hwInitializing || hwModelReady) return;
         hwInitializing = true;
-        DigitalInkRecognitionModelIdentifier modelId = null;
         try {
-            modelId = DigitalInkRecognitionModelIdentifier.fromLanguageTag("zh-Hans-CN");
-        } catch (Exception e) {
-            Log.w("KeyS", "Model ID lookup failed: " + e.getMessage());
-        }
-        if (modelId == null) {
-            hwInitializing = false;
-            hwStatusText = "Chinese handwriting model unavailable";
-            updateCandidates();
-            return;
-        }
-        DigitalInkRecognitionModel model =
-            DigitalInkRecognitionModel.builder(modelId).build();
-        hwStatusText = "Loading handwriting model…";
-        updateCandidates();
-
-        try {
+            DigitalInkRecognitionModelIdentifier modelId =
+                DigitalInkRecognitionModelIdentifier.fromLanguageTag("zh-Hans-CN");
+            if (modelId == null) { hwInitializing = false; return; }
+            DigitalInkRecognitionModel model =
+                DigitalInkRecognitionModel.builder(modelId).build();
             RemoteModelManager.getInstance().isModelDownloaded(model)
                 .addOnSuccessListener(isDownloaded -> {
-                    if (!isAttachedToWindow()) { hwInitializing = false; return; }
-                    if (isDownloaded) {
+                    if (Boolean.TRUE.equals(isDownloaded)) {
                         createHwRecognizer(model);
                     } else {
-                        hwStatusText = "Downloading Chinese handwriting model…";
-                        updateCandidates();
                         try {
                             RemoteModelManager.getInstance()
                                 .download(model, new DownloadConditions.Builder().build())
-                                .addOnSuccessListener(unused -> {
-                                    if (!isAttachedToWindow()) { hwInitializing = false; return; }
-                                    createHwRecognizer(model);
-                                })
-                                .addOnFailureListener(e -> {
-                                    hwInitializing = false;
-                                    if (!isAttachedToWindow()) return;
-                                    hwStatusText = "Download failed — check internet";
-                                    updateCandidates();
-                                });
-                        } catch (Exception e) {
+                                .addOnSuccessListener(unused -> createHwRecognizer(model))
+                                .addOnFailureListener(e -> hwInitializing = false);
+                        } catch (Throwable t) {
                             hwInitializing = false;
-                            if (!isAttachedToWindow()) return;
-                            hwStatusText = "Download error: " + e.getMessage();
-                            updateCandidates();
                         }
                     }
                 })
-                .addOnFailureListener(e -> {
-                    hwInitializing = false;
-                    if (!isAttachedToWindow()) return;
-                    hwStatusText = "Model check failed — tap to retry";
-                    updateCandidates();
-                });
-        } catch (Exception e) {
+                .addOnFailureListener(e -> hwInitializing = false);
+        } catch (Throwable t) {
             hwInitializing = false;
-            hwStatusText = "Handwriting init error: " + e.getMessage();
-            updateCandidates();
+            Log.w("KeyS", "Handwriting init failed", t);
         }
     }
 
@@ -519,12 +497,10 @@ public class KeyboardView extends LinearLayout {
             hwRecognizer = DigitalInkRecognition.getClient(
                 DigitalInkRecognizerOptions.builder(model).build());
             hwModelReady = true;
-        } catch (Exception e) {
-            Log.w("KeyS", "Failed to create recognizer: " + e.getMessage());
+        } catch (Throwable t) {
+            Log.w("KeyS", "Failed to create recognizer", t);
         }
         hwInitializing = false;
-        hwStatusText = null;
-        if (isAttachedToWindow()) updateCandidates();
     }
 
     private void updateCandidates() {
@@ -553,13 +529,7 @@ public class KeyboardView extends LinearLayout {
                     }
                 }
             } else if (mode == Mode.HANDWRITING) {
-                if (hwStatusText != null) {
-                    TextView status = new TextView(getContext());
-                    status.setText(hwStatusText);
-                    status.setTextColor(cTextDim());
-                    status.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-                    candidateBar.addView(status);
-                } else if (!hwCandidates.isEmpty()) {
+                if (!hwCandidates.isEmpty()) {
                     for (String cand : hwCandidates) {
                         candidateBar.addView(makeCandidateView(cand));
                     }
@@ -567,7 +537,7 @@ public class KeyboardView extends LinearLayout {
                     autoCommitHandler.postDelayed(autoCommitRunnable, 2000);
                 } else {
                     TextView hint = new TextView(getContext());
-                    hint.setText(hwModelReady ? "Draw a character below..." : "Draw in area below...");
+                    hint.setText("Draw a character below...");
                     hint.setTextColor(cTextDim());
                     hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
                     candidateBar.addView(hint);
