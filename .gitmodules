@@ -1,0 +1,3 @@
+[submodule "android/app/src/main/cpp/libpinyin"]
+	path = android/app/src/main/cpp/libpinyin
+	url = https://github.com/libpinyin/libpinyin.git
