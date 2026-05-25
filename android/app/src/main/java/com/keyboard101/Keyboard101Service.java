@@ -3,6 +3,7 @@ package com.keyboard101;
 import android.inputmethodservice.InputMethodService;
 import android.view.KeyEvent;
 import android.view.View;
+import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
 
 public class Keyboard101Service extends InputMethodService implements KeyboardView.OnActionListener {
@@ -14,6 +15,15 @@ public class Keyboard101Service extends InputMethodService implements KeyboardVi
         keyboardView = new KeyboardView(this);
         keyboardView.setOnActionListener(this);
         return keyboardView;
+    }
+
+    @Override
+    public void onStartInputView(EditorInfo info, boolean restarting) {
+        super.onStartInputView(info, restarting);
+        // Each time the keyboard appears for a new (or re-focused) field,
+        // drop any pinyin still buffered from a previous session. Users
+        // expect a fresh slate, not their last half-typed syllable.
+        if (keyboardView != null) keyboardView.resetTransientState();
     }
 
     @Override

@@ -27,7 +27,7 @@ public class GoogleInputEngine {
     private static final String TAG = "GoogleInputEngine";
     private static final String ENDPOINT =
         "https://inputtools.google.com/request" +
-        "?text=%s&itc=zh-t-i0-pinyin&num=30&cp=0&cs=1&ie=utf-8&oe=utf-8&app=droid";
+        "?text=%s&itc=zh-t-i0-pinyin&num=10&cp=0&cs=1&ie=utf-8&oe=utf-8&app=droid";
 
     public interface Callback {
         void onResult(List<String> candidates);

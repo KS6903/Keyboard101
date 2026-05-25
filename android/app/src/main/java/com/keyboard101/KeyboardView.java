@@ -136,9 +136,6 @@ public class KeyboardView extends LinearLayout {
     // Set true once the user has lifted a stroke that ran through recognition;
     // controls whether the candidate bar should say "no match" vs "draw…".
     private boolean hwHasAttempt = false;
-    // Latched on after a hard recognition failure — prevents repeated native
-    // crashes for the rest of the session.
-    private boolean hwDisabled = false;
     private final Handler hwUiHandler = new Handler(Looper.getMainLooper());
 
     // Backspace hold-to-repeat
@@ -220,6 +217,30 @@ public class KeyboardView extends LinearLayout {
     }
 
     public boolean isDarkTheme() { return darkTheme; }
+
+    /**
+     * Clear per-session state that the user expects to vanish when the
+     * keyboard hides — pinyin buffer, in-progress handwriting strokes,
+     * pending fetches. Called by the IME service from onStartInputView.
+     */
+    public void resetTransientState() {
+        pinyinBuffer = "";
+        pinyinCandidates.clear();
+        pinyinFetchHandler.removeCallbacksAndMessages(null);
+        hwCandidates.clear();
+        hwHasAttempt = false;
+        // Clear any in-progress strokes if a HandwritingView is mounted.
+        if (keyboardArea != null) {
+            for (int i = 0; i < keyboardArea.getChildCount(); i++) {
+                View v = keyboardArea.getChildAt(i);
+                if (v instanceof HandwritingView) {
+                    ((HandwritingView) v).clear();
+                    break;
+                }
+            }
+        }
+        if (candidateBar != null) updateCandidates();
+    }
 
     public void setOnActionListener(OnActionListener l) {
         this.listener = (l == null) ? noopListener : l;
@@ -535,10 +556,9 @@ public class KeyboardView extends LinearLayout {
                 } else {
                     TextView hint = new TextView(getContext());
                     String label;
-                    if (hwDisabled)          label = "Handwriting unavailable";
-                    else if (!hwModelReady)  label = "Loading handwriting…";
-                    else if (hwHasAttempt)   label = "No match — try again";
-                    else                     label = "Draw a character below...";
+                    if (!hwModelReady)      label = "Loading handwriting…";
+                    else if (hwHasAttempt)  label = "No match — try again";
+                    else                    label = "Draw a character below...";
                     hint.setText(label);
                     hint.setTextColor(cTextDim());
                     hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
@@ -1070,12 +1090,18 @@ public class KeyboardView extends LinearLayout {
 
     private void schedulePinyinFetch() {
         pinyinFetchHandler.removeCallbacksAndMessages(null);
-        pinyinFetchHandler.postDelayed(() ->
-            GoogleInputEngine.getCandidates(pinyinBuffer, candidates -> {
+        pinyinFetchHandler.postDelayed(() -> {
+            // Snapshot the buffer at fetch time. If the user has typed or
+            // deleted by the time the network response returns, discard it —
+            // otherwise stale candidates can overwrite fresh ones out of order.
+            final String queryAtFetch = pinyinBuffer;
+            GoogleInputEngine.getCandidates(queryAtFetch, candidates -> {
+                if (!queryAtFetch.equals(pinyinBuffer)) return;
                 pinyinCandidates.clear();
                 pinyinCandidates.addAll(candidates);
                 updateCandidates();
-            }), 200);
+            });
+        }, 200);
     }
 
     private void addKeyPreview(View key, String label) {
@@ -1410,7 +1436,6 @@ public class KeyboardView extends LinearLayout {
 
         private void runRecognition() {
             if (mode != Mode.HANDWRITING) return;
-            if (hwDisabled) return;
             if (!hwModelReady || hwRecognizer == null || completedStrokes.isEmpty()) return;
             if (viewWidth <= 0 || viewHeight <= 0) return;
             try {
@@ -1435,13 +1460,17 @@ public class KeyboardView extends LinearLayout {
                             Log.w("KeyS", "Ink recognition handler failed", t);
                         }
                     })
-                    .addOnFailureListener(e ->
-                        Log.w("KeyS", "Ink recognition failed: " + e.getMessage()));
+                    .addOnFailureListener(e -> {
+                        Log.w("KeyS", "Ink recognition failed: " + e.getMessage());
+                        hwHasAttempt = true;
+                        hwUiHandler.post(() -> { try { updateCandidates(); } catch (Throwable ignored) {} });
+                    });
             } catch (Throwable t) {
-                // Catch Errors too — ML Kit can throw native errors that
-                // would otherwise tear down the IME process.
-                Log.w("KeyS", "Handwriting recognition error, disabling for session", t);
-                hwDisabled = true;
+                // Soft fail — log and let the next stroke try again. Do NOT
+                // latch a disabled state; transient ML Kit hiccups (e.g. on the
+                // very first call while the recognizer warms up) shouldn't kill
+                // the feature for the whole session.
+                Log.w("KeyS", "Handwriting recognition error (will retry)", t);
             }
         }
     }
