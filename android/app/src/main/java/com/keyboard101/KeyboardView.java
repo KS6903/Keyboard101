@@ -23,13 +23,10 @@ import android.widget.ScrollView;
 import android.widget.LinearLayout;
 import android.widget.PopupWindow;
 import android.widget.RelativeLayout;
-import android.widget.SeekBar;
 import android.widget.TextView;
 
 import com.google.mlkit.common.model.DownloadConditions;
 import com.google.mlkit.common.model.RemoteModelManager;
-import com.google.mlkit.nl.languageid.LanguageIdentification;
-import com.google.mlkit.nl.languageid.LanguageIdentifier;
 import com.google.mlkit.vision.digitalink.DigitalInkRecognition;
 import com.google.mlkit.vision.digitalink.DigitalInkRecognitionModel;
 import com.google.mlkit.vision.digitalink.DigitalInkRecognitionModelIdentifier;
@@ -118,7 +115,18 @@ public class KeyboardView extends LinearLayout {
     private final List<String> pinyinCandidates = new ArrayList<>();
     private final Handler pinyinFetchHandler = new Handler(Looper.getMainLooper());
     private int chineseModeIdx = 0;
-    private final Mode[] CHINESE_MODES = {Mode.QWERTY, Mode.PINYIN, Mode.HANDWRITING};
+    // Slot 0 is dynamic: returns whichever English layout the user last used
+    // (QWERTY or NUMPAD/T9). Slots 1 and 2 are Pinyin and Handwriting.
+    private static final int CHINESE_MODE_COUNT = 3;
+    private Mode lastEnglishMode = Mode.QWERTY;
+
+    private Mode chineseModeAt(int idx) {
+        switch (idx) {
+            case 1: return Mode.PINYIN;
+            case 2: return Mode.HANDWRITING;
+            default: return lastEnglishMode;
+        }
+    }
 
     // Handwriting recognition state (persists across render() calls)
     private final List<String> hwCandidates = new ArrayList<>();
@@ -142,7 +150,6 @@ public class KeyboardView extends LinearLayout {
             updateCandidates();
         }
     };
-    private LanguageIdentifier languageIdentifier;
 
     // Backspace hold-to-repeat
     private final Handler bkRepeatHandler = new Handler(Looper.getMainLooper());
@@ -180,17 +187,20 @@ public class KeyboardView extends LinearLayout {
 
     public KeyboardView(Context context) {
         super(context);
-        darkTheme = prefs().getBoolean("dark_theme", true);
-        autoCapSentence = prefs().getBoolean("auto_cap", true);
-        languageIdentifier = LanguageIdentification.getClient();
-        setOrientation(VERTICAL);
-        setBackgroundColor(cPanel());
-        buildResizer();
-        buildCandidateBar();
-        buildKeyboardArea();
-        applySavedHeight();
-        autoCapCheck();
-        render();
+        try {
+            darkTheme = prefs().getBoolean("dark_theme", true);
+            autoCapSentence = prefs().getBoolean("auto_cap", true);
+            setOrientation(VERTICAL);
+            setBackgroundColor(cPanel());
+            buildResizer();
+            buildCandidateBar();
+            buildKeyboardArea();
+            applySavedHeight();
+            autoCapCheck();
+            render();
+        } catch (Throwable t) {
+            Log.w("KeyS", "KeyboardView init failed", t);
+        }
     }
 
     private void buildCandidateBar() {
@@ -212,6 +222,7 @@ public class KeyboardView extends LinearLayout {
         darkTheme = dark;
         prefs().edit().putBoolean("dark_theme", dark).apply();
         setBackgroundColor(cPanel());
+        rebuildResizer();
         render();
     }
 
@@ -230,21 +241,10 @@ public class KeyboardView extends LinearLayout {
     // ---------- Layout scaffolding ----------
     private void buildResizer() {
         RelativeLayout wrapper = new RelativeLayout(getContext());
-        wrapper.setLayoutParams(new LayoutParams(LayoutParams.MATCH_PARENT, dp(24)));
+        wrapper.setLayoutParams(new LayoutParams(LayoutParams.MATCH_PARENT, dp(28)));
         wrapper.setBackgroundColor(cPanel());
 
-        // Centered decorative pill (visual only — no touch)
-        View pill = new View(getContext());
-        RelativeLayout.LayoutParams pillLp = new RelativeLayout.LayoutParams(dp(40), dp(3));
-        pillLp.addRule(RelativeLayout.CENTER_IN_PARENT);
-        pill.setLayoutParams(pillLp);
-        GradientDrawable pillBg = new GradientDrawable();
-        pillBg.setColor(cResizer());
-        pillBg.setCornerRadius(dp(2));
-        pill.setBackground(pillBg);
-        wrapper.addView(pill);
-
-        // Upper-left handle: short tap = settings popup, drag up/down = resize
+        // Left side: drag handle to resize the keyboard.
         Button handle = new Button(getContext());
         handle.setText("⠿");
         handle.setBackground(null);
@@ -279,14 +279,6 @@ public class KeyboardView extends LinearLayout {
                     }
                     return true;
                 case MotionEvent.ACTION_UP:
-                    v.setPressed(false);
-                    if (wasDrag[0]) {
-                        prefs().edit().putInt(KEY_HEIGHT_DP, kbdHeightDp).apply();
-                    } else {
-                        showSettingsPopup(v);
-                    }
-                    wasDrag[0] = false;
-                    return true;
                 case MotionEvent.ACTION_CANCEL:
                     v.setPressed(false);
                     if (wasDrag[0]) prefs().edit().putInt(KEY_HEIGHT_DP, kbdHeightDp).apply();
@@ -297,68 +289,75 @@ public class KeyboardView extends LinearLayout {
         });
         wrapper.addView(handle);
 
-        resizerBar = wrapper;
-        addView(wrapper);
-    }
+        // Right side: inline controls (theme, auto-cap, system settings).
+        LinearLayout controls = new LinearLayout(getContext());
+        controls.setOrientation(HORIZONTAL);
+        controls.setGravity(Gravity.CENTER_VERTICAL);
+        RelativeLayout.LayoutParams controlsLp = new RelativeLayout.LayoutParams(
+            RelativeLayout.LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT);
+        controlsLp.addRule(RelativeLayout.ALIGN_PARENT_END);
+        controlsLp.addRule(RelativeLayout.CENTER_VERTICAL);
+        controls.setLayoutParams(controlsLp);
 
-    private void showSettingsPopup(View anchor) {
-        LinearLayout content = new LinearLayout(getContext());
-        content.setOrientation(VERTICAL);
-        content.setPadding(dp(16), dp(16), dp(16), dp(16));
-        GradientDrawable popupBg = new GradientDrawable();
-        popupBg.setColor(cPanel());
-        popupBg.setCornerRadius(dp(12));
-        popupBg.setStroke(dp(1), cKeyDark());
-        content.setBackground(popupBg);
-
-        // Theme toggle
-        Button themeBtn = makeButton(darkTheme ? "☀️ Light mode" : "🌙 Dark mode", cKeyDark(), cText());
-        LinearLayout.LayoutParams tbLp = new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(44));
-        tbLp.setMargins(0, 0, 0, dp(8));
-        themeBtn.setLayoutParams(tbLp);
-
-        PopupWindow pw = new PopupWindow(content, dp(240), ViewGroup.LayoutParams.WRAP_CONTENT, true);
-        pw.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-        pw.setOutsideTouchable(true);
-
+        Button themeBtn = makeToolbarButton(darkTheme ? "🌙" : "☀️");
         themeBtn.setOnClickListener(v -> {
             setDarkTheme(!darkTheme);
-            themeBtn.setText(darkTheme ? "☀️ Light mode" : "🌙 Dark mode");
+            // setDarkTheme rebuilds the bar, so no need to update label here.
         });
-        content.addView(themeBtn);
+        controls.addView(themeBtn);
 
-        // Auto-capitalize toggle
-        Button autoCapBtn = makeButton(autoCapSentence ? "Auto-cap: On" : "Auto-cap: Off", cKeyDark(), cText());
-        LinearLayout.LayoutParams acLp = new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(44));
-        acLp.setMargins(0, 0, 0, dp(8));
-        autoCapBtn.setLayoutParams(acLp);
-        autoCapBtn.setAlpha(autoCapSentence ? 1f : 0.5f);
+        Button autoCapBtn = makeToolbarButton("Aa");
+        autoCapBtn.setAlpha(autoCapSentence ? 1f : 0.4f);
         autoCapBtn.setOnClickListener(v -> {
             autoCapSentence = !autoCapSentence;
             prefs().edit().putBoolean("auto_cap", autoCapSentence).apply();
-            autoCapBtn.setText(autoCapSentence ? "Auto-cap: On" : "Auto-cap: Off");
-            autoCapBtn.setAlpha(autoCapSentence ? 1f : 0.5f);
-            autoCapCheck(); render();
+            autoCapBtn.setAlpha(autoCapSentence ? 1f : 0.4f);
+            autoCapCheck();
+            render();
         });
-        content.addView(autoCapBtn);
+        controls.addView(autoCapBtn);
 
-        // System settings button
-        Button settingsBtn = makeButton("Open System Settings", cKeyDark(), cText());
-        settingsBtn.setLayoutParams(new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(44)));
+        Button settingsBtn = makeToolbarButton("⚙");
         settingsBtn.setOnClickListener(v -> {
             try {
                 Intent intent = new Intent(Settings.ACTION_INPUT_METHOD_SETTINGS);
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 getContext().startActivity(intent);
             } catch (Throwable ignored) {}
-            pw.dismiss();
         });
-        content.addView(settingsBtn);
+        controls.addView(settingsBtn);
 
-        content.measure(
-            View.MeasureSpec.makeMeasureSpec(dp(260), View.MeasureSpec.EXACTLY),
-            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
-        pw.showAsDropDown(anchor, 0, -(content.getMeasuredHeight() + anchor.getHeight()), Gravity.START);
+        wrapper.addView(controls);
+
+        resizerBar = wrapper;
+        addView(wrapper);
+    }
+
+    private Button makeToolbarButton(String label) {
+        Button b = new Button(getContext());
+        b.setText(label);
+        b.setAllCaps(false);
+        b.setBackground(null);
+        b.setTextColor(cTextDim());
+        b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        b.setStateListAnimator(null);
+        b.setIncludeFontPadding(false);
+        b.setMinWidth(0);
+        b.setMinHeight(0);
+        b.setPadding(dp(8), 0, dp(8), 0);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(36), LayoutParams.MATCH_PARENT);
+        b.setLayoutParams(lp);
+        return b;
+    }
+
+    private void rebuildResizer() {
+        if (resizerBar != null) removeView(resizerBar);
+        buildResizer();
+        // buildResizer appends to the end; lift it back to index 0 so it
+        // remains above the candidate bar and keyboard area.
+        removeView(resizerBar);
+        addView(resizerBar, 0);
+        setBackgroundColor(cPanel());
     }
 
     private void buildKeyboardArea() {
@@ -386,7 +385,7 @@ public class KeyboardView extends LinearLayout {
         if (dp > max) dp = max;
         kbdHeightDp = dp;
         ViewGroup.LayoutParams lp = getLayoutParams();
-        int total = dp(dp) + dp(16); // include resizer
+        int total = dp(dp) + dp(28); // include resizer toolbar
         if (lp == null) {
             setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, total));
         } else {
@@ -475,6 +474,7 @@ public class KeyboardView extends LinearLayout {
         try {
             RemoteModelManager.getInstance().isModelDownloaded(model)
                 .addOnSuccessListener(isDownloaded -> {
+                    if (!isAttachedToWindow()) { hwInitializing = false; return; }
                     if (isDownloaded) {
                         createHwRecognizer(model);
                     } else {
@@ -483,14 +483,19 @@ public class KeyboardView extends LinearLayout {
                         try {
                             RemoteModelManager.getInstance()
                                 .download(model, new DownloadConditions.Builder().build())
-                                .addOnSuccessListener(unused -> createHwRecognizer(model))
+                                .addOnSuccessListener(unused -> {
+                                    if (!isAttachedToWindow()) { hwInitializing = false; return; }
+                                    createHwRecognizer(model);
+                                })
                                 .addOnFailureListener(e -> {
                                     hwInitializing = false;
+                                    if (!isAttachedToWindow()) return;
                                     hwStatusText = "Download failed — check internet";
                                     updateCandidates();
                                 });
                         } catch (Exception e) {
                             hwInitializing = false;
+                            if (!isAttachedToWindow()) return;
                             hwStatusText = "Download error: " + e.getMessage();
                             updateCandidates();
                         }
@@ -498,6 +503,7 @@ public class KeyboardView extends LinearLayout {
                 })
                 .addOnFailureListener(e -> {
                     hwInitializing = false;
+                    if (!isAttachedToWindow()) return;
                     hwStatusText = "Model check failed — tap to retry";
                     updateCandidates();
                 });
@@ -518,7 +524,7 @@ public class KeyboardView extends LinearLayout {
         }
         hwInitializing = false;
         hwStatusText = null;
-        updateCandidates();
+        if (isAttachedToWindow()) updateCandidates();
     }
 
     private void updateCandidates() {
@@ -893,6 +899,7 @@ public class KeyboardView extends LinearLayout {
         String label;
         if (mode == Mode.PINYIN) label = "拼音 Pinyin";
         else if (mode == Mode.HANDWRITING) label = "手写 Handwriting";
+        else if (mode == Mode.NUMPAD) label = "九宫格 T9";
         else label = "English";
 
         Button b = baseKey(label, cKeyDark(), weight);
@@ -926,7 +933,7 @@ public class KeyboardView extends LinearLayout {
                         if (!spaceInSwipeMode) return true;
                         float dx = event.getRawX() - startX;
                         int dir = dx > dp(30) ? 1 : dx < -dp(30) ? -1 : 0;
-                        targetIdx = (chineseModeIdx + dir + CHINESE_MODES.length) % CHINESE_MODES.length;
+                        targetIdx = (chineseModeIdx + dir + CHINESE_MODE_COUNT) % CHINESE_MODE_COUNT;
                         updateModePopup(targetIdx, dx);
                         return true;
                     }
@@ -952,7 +959,7 @@ public class KeyboardView extends LinearLayout {
                         } else if (targetIdx != chineseModeIdx) {
                             // Held + swiped — switch mode, no space
                             chineseModeIdx = targetIdx;
-                            mode = CHINESE_MODES[chineseModeIdx];
+                            mode = chineseModeAt(chineseModeIdx);
                             render();
                         }
                         // Held but released at center → dismiss only, no space
@@ -976,7 +983,8 @@ public class KeyboardView extends LinearLayout {
     private void createAndShowModePopup(View anchor) {
         dismissModePopup();
 
-        String[] names = {"English", "拼音 Pinyin", "手写 Handwriting"};
+        String englishLabel = (lastEnglishMode == Mode.NUMPAD) ? "九宫格 T9" : "English";
+        String[] names = {englishLabel, "拼音 Pinyin", "手写 Handwriting"};
 
         // Card background
         LinearLayout card = new LinearLayout(getContext());
@@ -1311,6 +1319,7 @@ public class KeyboardView extends LinearLayout {
     private void cycleMode() {
         // Globe strictly toggles between QWERTY and T9 (3x4); no 3-way cycle
         mode = (mode == Mode.NUMPAD) ? Mode.QWERTY : Mode.NUMPAD;
+        lastEnglishMode = mode;
         render();
     }
 
@@ -1347,40 +1356,6 @@ public class KeyboardView extends LinearLayout {
 
     private SharedPreferences prefs() {
         return getContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-    }
-
-    // ---------- Resize ----------
-    private class ResizeTouchListener implements View.OnTouchListener {
-        private float startY;
-        private int startHeightDp;
-
-        @Override
-        public boolean onTouch(View v, MotionEvent event) {
-            switch (event.getActionMasked()) {
-                case MotionEvent.ACTION_DOWN:
-                    startY = event.getRawY();
-                    startHeightDp = prefs().getInt(KEY_HEIGHT_DP, DEFAULT_HEIGHT_DP);
-                    return true;
-                case MotionEvent.ACTION_MOVE: {
-                    float deltaPx = startY - event.getRawY();
-                    int deltaDp = (int) (deltaPx / getResources().getDisplayMetrics().density);
-                    int newHeight = startHeightDp + deltaDp;
-                    setKeyboardHeightDp(newHeight);
-                    return true;
-                }
-                case MotionEvent.ACTION_UP:
-                case MotionEvent.ACTION_CANCEL: {
-                    ViewGroup.LayoutParams lp = getLayoutParams();
-                    int totalPx = (lp != null) ? lp.height : dp(DEFAULT_HEIGHT_DP);
-                    int contentDp = (int) (totalPx / getResources().getDisplayMetrics().density) - 16;
-                    if (contentDp < MIN_HEIGHT_DP) contentDp = MIN_HEIGHT_DP;
-                    if (contentDp > MAX_HEIGHT_DP) contentDp = MAX_HEIGHT_DP;
-                    prefs().edit().putInt(KEY_HEIGHT_DP, contentDp).apply();
-                    return true;
-                }
-            }
-            return false;
-        }
     }
 
     // ---------- Handwriting View ----------
