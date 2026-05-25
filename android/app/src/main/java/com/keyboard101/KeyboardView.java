@@ -26,7 +26,6 @@ import android.widget.RelativeLayout;
 import android.widget.SeekBar;
 import android.widget.TextView;
 
-import com.github.promeg.pinyinhelper.Pinyin;
 import com.google.mlkit.common.model.DownloadConditions;
 import com.google.mlkit.common.model.RemoteModelManager;
 import com.google.mlkit.nl.languageid.LanguageIdentification;
@@ -116,6 +115,8 @@ public class KeyboardView extends LinearLayout {
     private LinearLayout candidateBar;
     private HorizontalScrollView candidateScroll;
     private String pinyinBuffer = "";
+    private final List<String> pinyinCandidates = new ArrayList<>();
+    private final Handler pinyinFetchHandler = new Handler(Looper.getMainLooper());
     private int chineseModeIdx = 0;
     private final Mode[] CHINESE_MODES = {Mode.QWERTY, Mode.PINYIN, Mode.HANDWRITING};
 
@@ -124,6 +125,7 @@ public class KeyboardView extends LinearLayout {
     private boolean hwModelReady = false;
     private DigitalInkRecognizer hwRecognizer;
     private String hwStatusText = null;
+    private boolean hwInitializing = false;
     private final Handler autoCommitHandler = new Handler(Looper.getMainLooper());
     private final Runnable autoCommitRunnable = () -> {
         if (mode == Mode.HANDWRITING && !hwCandidates.isEmpty()) {
@@ -181,7 +183,6 @@ public class KeyboardView extends LinearLayout {
         darkTheme = prefs().getBoolean("dark_theme", true);
         autoCapSentence = prefs().getBoolean("auto_cap", true);
         languageIdentifier = LanguageIdentification.getClient();
-        PinyinDictionary.initAsync(this::updateCandidates);
         setOrientation(VERTICAL);
         setBackgroundColor(cPanel());
         buildResizer();
@@ -420,7 +421,7 @@ public class KeyboardView extends LinearLayout {
     }
 
     private void renderHandwriting() {
-        if (!hwModelReady && hwRecognizer == null) {
+        if (!hwModelReady && hwRecognizer == null && !hwInitializing) {
             initHandwritingRecognizer();
         }
         HandwritingView hw = new HandwritingView(getContext());
@@ -440,48 +441,70 @@ public class KeyboardView extends LinearLayout {
     }
 
     private void initHandwritingRecognizer() {
-        DigitalInkRecognitionModelIdentifier modelId;
+        if (hwInitializing) return;
+        hwInitializing = true;
+        DigitalInkRecognitionModelIdentifier modelId = null;
         try {
             modelId = DigitalInkRecognitionModelIdentifier.fromLanguageTag("zh-Hans-CN");
-        } catch (com.google.mlkit.common.MlKitException e) {
-            modelId = null;
+        } catch (Exception e) {
+            Log.w("KeyS", "Model ID lookup failed: " + e.getMessage());
         }
         if (modelId == null) {
-            hwStatusText = "Chinese model unavailable";
+            hwInitializing = false;
+            hwStatusText = "Chinese handwriting model unavailable";
             updateCandidates();
             return;
         }
         DigitalInkRecognitionModel model =
             DigitalInkRecognitionModel.builder(modelId).build();
-        hwStatusText = "Loading handwriting model...";
+        hwStatusText = "Loading handwriting model…";
         updateCandidates();
 
-        RemoteModelManager.getInstance().isModelDownloaded(model)
-            .addOnSuccessListener(isDownloaded -> {
-                if (isDownloaded) {
-                    createHwRecognizer(model);
-                } else {
-                    hwStatusText = "Downloading handwriting model...";
-                    updateCandidates();
-                    RemoteModelManager.getInstance()
-                        .download(model, new DownloadConditions.Builder().build())
-                        .addOnSuccessListener(unused -> createHwRecognizer(model))
-                        .addOnFailureListener(e -> {
-                            hwStatusText = "Download failed — check internet";
+        try {
+            RemoteModelManager.getInstance().isModelDownloaded(model)
+                .addOnSuccessListener(isDownloaded -> {
+                    if (isDownloaded) {
+                        createHwRecognizer(model);
+                    } else {
+                        hwStatusText = "Downloading Chinese handwriting model…";
+                        updateCandidates();
+                        try {
+                            RemoteModelManager.getInstance()
+                                .download(model, new DownloadConditions.Builder().build())
+                                .addOnSuccessListener(unused -> createHwRecognizer(model))
+                                .addOnFailureListener(e -> {
+                                    hwInitializing = false;
+                                    hwStatusText = "Download failed — check internet";
+                                    updateCandidates();
+                                });
+                        } catch (Exception e) {
+                            hwInitializing = false;
+                            hwStatusText = "Download error: " + e.getMessage();
                             updateCandidates();
-                        });
-                }
-            })
-            .addOnFailureListener(e -> {
-                hwStatusText = "Model check failed";
-                updateCandidates();
-            });
+                        }
+                    }
+                })
+                .addOnFailureListener(e -> {
+                    hwInitializing = false;
+                    hwStatusText = "Model check failed — tap to retry";
+                    updateCandidates();
+                });
+        } catch (Exception e) {
+            hwInitializing = false;
+            hwStatusText = "Handwriting init error: " + e.getMessage();
+            updateCandidates();
+        }
     }
 
     private void createHwRecognizer(DigitalInkRecognitionModel model) {
-        hwRecognizer = DigitalInkRecognition.getClient(
-            DigitalInkRecognizerOptions.builder(model).build());
-        hwModelReady = true;
+        try {
+            hwRecognizer = DigitalInkRecognition.getClient(
+                DigitalInkRecognizerOptions.builder(model).build());
+            hwModelReady = true;
+        } catch (Exception e) {
+            Log.w("KeyS", "Failed to create recognizer: " + e.getMessage());
+        }
+        hwInitializing = false;
         hwStatusText = null;
         updateCandidates();
     }
@@ -499,45 +522,16 @@ public class KeyboardView extends LinearLayout {
                 preedit.setPadding(dp(4), 0, dp(12), 0);
                 candidateBar.addView(preedit);
 
-                if (!PinyinDictionary.isReady()) {
+                if (pinyinCandidates.isEmpty()) {
                     TextView loading = new TextView(getContext());
-                    loading.setText("Building dictionary...");
+                    loading.setText("Fetching…");
                     loading.setTextColor(cTextDim());
                     loading.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
                     candidateBar.addView(loading);
                 } else {
-                    java.util.Set<String> res = new java.util.LinkedHashSet<>();
-                    String[] syllables = PinyinEngine.segment(pinyinBuffer);
-
-                    if (syllables.length == 1) {
-                        String syl = syllables[0];
-                        res.addAll(PinyinDictionary.getCandidates(syl));
-                        // Add prefix candidates when syllable is incomplete or results are sparse
-                        if (!PinyinEngine.isCompleteSyllable(syl) || res.size() < 8) {
-                            res.addAll(PinyinDictionary.getPrefixCandidates(syl));
-                        }
-                    } else {
-                        // Multi-syllable: first char of each segment as a combined top candidate
-                        StringBuilder combo = new StringBuilder();
-                        for (String syl : syllables) {
-                            List<String> chars = PinyinDictionary.getCandidates(syl);
-                            combo.append(chars.isEmpty() ? syl : chars.get(0));
-                        }
-                        if (combo.length() > 0) res.add(combo.toString());
-                        // Then individual syllable candidates
-                        for (String syl : syllables) {
-                            res.addAll(PinyinDictionary.getCandidates(syl));
-                            if (res.size() > 50) break;
-                        }
-                    }
-
-                    if (res.isEmpty()) {
-                        candidateBar.addView(makeCandidateView(pinyinBuffer));
-                    } else {
-                        for (String cand : res) {
-                            candidateBar.addView(makeCandidateView(cand));
-                            if (candidateBar.getChildCount() > 50) break;
-                        }
+                    for (String cand : pinyinCandidates) {
+                        candidateBar.addView(makeCandidateView(cand));
+                        if (candidateBar.getChildCount() > 30) break;
                     }
                 }
             } else if (mode == Mode.HANDWRITING) {
@@ -582,8 +576,10 @@ public class KeyboardView extends LinearLayout {
         tv.setGravity(Gravity.CENTER);
         tv.setOnClickListener(v -> {
             autoCommitHandler.removeCallbacks(autoCommitRunnable);
+            pinyinFetchHandler.removeCallbacksAndMessages(null);
             listener.onText(cand);
             pinyinBuffer = "";
+            pinyinCandidates.clear();
             hwCandidates.clear();
             // Trigger clear in HandwritingView
             for (int i = 0; i < keyboardArea.getChildCount(); i++) {
@@ -863,6 +859,8 @@ public class KeyboardView extends LinearLayout {
         b.setOnClickListener(v -> {
             if (mode == Mode.PINYIN) {
                 pinyinBuffer += letter.toLowerCase();
+                pinyinCandidates.clear();
+                schedulePinyinFetch();
                 render();
                 return;
             }
@@ -929,14 +927,11 @@ public class KeyboardView extends LinearLayout {
                             // Quick tap — commit space / pinyin
                             autoCommitHandler.removeCallbacks(autoCommitRunnable);
                             if (mode == Mode.PINYIN && pinyinBuffer.length() > 0) {
-                                String[] segs = PinyinEngine.segment(pinyinBuffer);
-                                StringBuilder committed = new StringBuilder();
-                                for (String syl : segs) {
-                                    List<String> chars = PinyinDictionary.getCandidates(syl);
-                                    committed.append(chars.isEmpty() ? syl : chars.get(0));
-                                }
-                                listener.onText(committed.length() > 0 ? committed.toString() : pinyinBuffer);
+                                String toCommit = pinyinCandidates.isEmpty() ? pinyinBuffer : pinyinCandidates.get(0);
+                                listener.onText(toCommit);
                                 pinyinBuffer = "";
+                                pinyinCandidates.clear();
+                                pinyinFetchHandler.removeCallbacksAndMessages(null);
                                 render();
                             } else {
                                 listener.onText(" ");
@@ -1082,6 +1077,16 @@ public class KeyboardView extends LinearLayout {
         keyPreviewPopup = null;
     }
 
+    private void schedulePinyinFetch() {
+        pinyinFetchHandler.removeCallbacksAndMessages(null);
+        pinyinFetchHandler.postDelayed(() ->
+            GoogleInputEngine.getCandidates(pinyinBuffer, candidates -> {
+                pinyinCandidates.clear();
+                pinyinCandidates.addAll(candidates);
+                updateCandidates();
+            }), 200);
+    }
+
     private void addKeyPreview(View key, String label) {
         key.setOnTouchListener((v, event) -> {
             switch (event.getAction()) {
@@ -1096,8 +1101,9 @@ public class KeyboardView extends LinearLayout {
     private void doBackspace() {
         if (mode == Mode.PINYIN && pinyinBuffer.length() > 0) {
             pinyinBuffer = pinyinBuffer.substring(0, pinyinBuffer.length() - 1);
-            // During rapid fire skip full render — keeps button in DOM so ACTION_UP fires.
-            // A single render() is done in backspaceKey when the finger lifts.
+            pinyinCandidates.clear();
+            if (pinyinBuffer.length() > 0) schedulePinyinFetch();
+            else pinyinFetchHandler.removeCallbacksAndMessages(null);
             if (!bkRepeating) render();
         } else {
             listener.onBackspace();
@@ -1408,30 +1414,34 @@ public class KeyboardView extends LinearLayout {
 
         @Override
         public boolean onTouchEvent(MotionEvent event) {
-            float x = event.getX();
-            float y = event.getY();
-            long t = event.getEventTime();
-            switch (event.getAction()) {
-                case MotionEvent.ACTION_DOWN:
-                    activeStroke = Ink.Stroke.builder();
-                    activeStroke.addPoint(Ink.Point.create(x, y, t));
-                    drawPath.moveTo(x, y);
-                    recognizeHandler.removeCallbacksAndMessages(null);
-                    break;
-                case MotionEvent.ACTION_MOVE:
-                    if (activeStroke != null) activeStroke.addPoint(Ink.Point.create(x, y, t));
-                    drawPath.lineTo(x, y);
-                    break;
-                case MotionEvent.ACTION_UP:
-                    if (activeStroke != null) {
+            try {
+                float x = event.getX();
+                float y = event.getY();
+                long t = event.getEventTime();
+                switch (event.getAction()) {
+                    case MotionEvent.ACTION_DOWN:
+                        activeStroke = Ink.Stroke.builder();
                         activeStroke.addPoint(Ink.Point.create(x, y, t));
-                        completedStrokes.add(activeStroke);
-                        activeStroke = null;
-                    }
-                    recognizeHandler.postDelayed(this::runRecognition, 800);
-                    break;
+                        drawPath.moveTo(x, y);
+                        recognizeHandler.removeCallbacksAndMessages(null);
+                        break;
+                    case MotionEvent.ACTION_MOVE:
+                        if (activeStroke != null) activeStroke.addPoint(Ink.Point.create(x, y, t));
+                        drawPath.lineTo(x, y);
+                        break;
+                    case MotionEvent.ACTION_UP:
+                        if (activeStroke != null) {
+                            activeStroke.addPoint(Ink.Point.create(x, y, t));
+                            completedStrokes.add(activeStroke);
+                            activeStroke = null;
+                        }
+                        recognizeHandler.postDelayed(this::runRecognition, 800);
+                        break;
+                }
+                invalidate();
+            } catch (Exception e) {
+                Log.w("KeyS", "HandwritingView touch error: " + e.getMessage());
             }
-            invalidate();
             return true;
         }
 

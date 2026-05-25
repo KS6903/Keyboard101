@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Copy-Item \"d:\\\\Keyboard proj\\\\Keyboard101\\\\android\\\\app\\\\build\\\\outputs\\\\apk\\\\debug\\\\app-debug.apk\" \"d:\\\\Keyboard proj\\\\Keyboard101\\\\KeyS.apk\" -Force)"
+    ]
+  }
+}
