@@ -133,22 +133,9 @@ public class KeyboardView extends LinearLayout {
     private boolean hwModelReady = false;
     private DigitalInkRecognizer hwRecognizer;
     private boolean hwInitializing = false;
-    private final Handler autoCommitHandler = new Handler(Looper.getMainLooper());
-    private final Runnable autoCommitRunnable = () -> {
-        if (mode == Mode.HANDWRITING && !hwCandidates.isEmpty()) {
-            listener.onText(hwCandidates.get(0));
-            // Trigger clear in HandwritingView
-            for (int i = 0; i < keyboardArea.getChildCount(); i++) {
-                View v = keyboardArea.getChildAt(i);
-                if (v instanceof HandwritingView) {
-                    ((HandwritingView) v).clear();
-                    break;
-                }
-            }
-            hwCandidates.clear();
-            updateCandidates();
-        }
-    };
+    // Latched on after a hard recognition failure — prevents repeated native
+    // crashes for the rest of the session.
+    private boolean hwDisabled = false;
 
     // Backspace hold-to-repeat
     private final Handler bkRepeatHandler = new Handler(Looper.getMainLooper());
@@ -533,8 +520,6 @@ public class KeyboardView extends LinearLayout {
                     for (String cand : hwCandidates) {
                         candidateBar.addView(makeCandidateView(cand));
                     }
-                    autoCommitHandler.removeCallbacks(autoCommitRunnable);
-                    autoCommitHandler.postDelayed(autoCommitRunnable, 2000);
                 } else {
                     TextView hint = new TextView(getContext());
                     hint.setText("Draw a character below...");
@@ -563,7 +548,6 @@ public class KeyboardView extends LinearLayout {
         tv.setPadding(dp(12), 0, dp(12), 0);
         tv.setGravity(Gravity.CENTER);
         tv.setOnClickListener(v -> {
-            autoCommitHandler.removeCallbacks(autoCommitRunnable);
             pinyinFetchHandler.removeCallbacksAndMessages(null);
             listener.onText(cand);
             pinyinBuffer = "";
@@ -914,7 +898,6 @@ public class KeyboardView extends LinearLayout {
                         dismissModePopup();
                         if (!spaceInSwipeMode) {
                             // Quick tap — commit space / pinyin
-                            autoCommitHandler.removeCallbacks(autoCommitRunnable);
                             if (mode == Mode.PINYIN && pinyinBuffer.length() > 0) {
                                 String toCommit = pinyinCandidates.isEmpty() ? pinyinBuffer : pinyinCandidates.get(0);
                                 listener.onText(toCommit);
@@ -1401,39 +1384,45 @@ public class KeyboardView extends LinearLayout {
                         break;
                 }
                 invalidate();
-            } catch (Exception e) {
-                Log.w("KeyS", "HandwritingView touch error: " + e.getMessage());
+            } catch (Throwable t) {
+                Log.w("KeyS", "HandwritingView touch error", t);
             }
             return true;
         }
 
         private void runRecognition() {
             if (mode != Mode.HANDWRITING) return;
+            if (hwDisabled) return;
             if (!hwModelReady || hwRecognizer == null || completedStrokes.isEmpty()) return;
             if (viewWidth <= 0 || viewHeight <= 0) return;
-            Ink.Builder inkBuilder = Ink.builder();
-            for (Ink.Stroke.Builder sb : completedStrokes) inkBuilder.addStroke(sb.build());
-
-            RecognitionContext ctx = RecognitionContext.builder()
-                .setWritingArea(new WritingArea(viewWidth, viewHeight))
-                .build();
-
             try {
+                Ink.Builder inkBuilder = Ink.builder();
+                for (Ink.Stroke.Builder sb : completedStrokes) inkBuilder.addStroke(sb.build());
+                RecognitionContext ctx = RecognitionContext.builder()
+                    .setWritingArea(new WritingArea(viewWidth, viewHeight))
+                    .build();
                 hwRecognizer.recognize(inkBuilder.build(), ctx)
                     .addOnSuccessListener(result -> {
-                        if (!isAttachedToWindow()) return;
-                        hwCandidates.clear();
-                        for (RecognitionCandidate c : result.getCandidates()) {
-                            String text = c.getText();
-                            if (text != null && !text.trim().isEmpty()) hwCandidates.add(text);
-                            if (hwCandidates.size() >= 15) break;
+                        try {
+                            if (!isAttachedToWindow()) return;
+                            hwCandidates.clear();
+                            for (RecognitionCandidate c : result.getCandidates()) {
+                                String text = c.getText();
+                                if (text != null && !text.trim().isEmpty()) hwCandidates.add(text);
+                                if (hwCandidates.size() >= 15) break;
+                            }
+                            updateCandidates();
+                        } catch (Throwable t) {
+                            Log.w("KeyS", "Ink recognition handler failed", t);
                         }
-                        updateCandidates();
                     })
                     .addOnFailureListener(e ->
                         Log.w("KeyS", "Ink recognition failed: " + e.getMessage()));
-            } catch (Exception e) {
-                Log.w("KeyS", "Handwriting recognition error: " + e.getMessage());
+            } catch (Throwable t) {
+                // Catch Errors too — ML Kit can throw native errors that
+                // would otherwise tear down the IME process.
+                Log.w("KeyS", "Handwriting recognition error, disabling for session", t);
+                hwDisabled = true;
             }
         }
     }

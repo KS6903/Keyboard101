@@ -9,7 +9,8 @@
       "Bash(where java *)",
       "Read(//c/Users/Zhupin/AppData/Local/Android/Sdk/**)",
       "Read(//c/Program Files/Java/**)",
-      "Bash(./gradlew.bat assembleDebug)"
+      "Bash(./gradlew.bat assembleDebug)",
+      "Bash(./gradlew.bat compileDebugJavaWithJavac)"
     ]
   }
 }
