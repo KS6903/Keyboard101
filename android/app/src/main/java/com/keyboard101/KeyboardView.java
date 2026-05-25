@@ -189,6 +189,7 @@ public class KeyboardView extends LinearLayout {
         buildCandidateBar();
         buildKeyboardArea();
         applySavedHeight();
+        autoCapCheck();
         render();
     }
 
@@ -218,52 +219,85 @@ public class KeyboardView extends LinearLayout {
 
     public void setOnActionListener(OnActionListener l) {
         this.listener = (l == null) ? noopListener : l;
+        if (!shiftLock) {
+            boolean prev = shift;
+            shift = false;
+            autoCapCheck();
+            if (shift != prev) render();
+        }
     }
 
     // ---------- Layout scaffolding ----------
     private void buildResizer() {
         RelativeLayout wrapper = new RelativeLayout(getContext());
-        wrapper.setLayoutParams(new LayoutParams(LayoutParams.MATCH_PARENT, dp(20)));
+        wrapper.setLayoutParams(new LayoutParams(LayoutParams.MATCH_PARENT, dp(24)));
         wrapper.setBackgroundColor(cPanel());
 
-        // Centered drag bar
-        View bar = new View(getContext());
-        RelativeLayout.LayoutParams barLp = new RelativeLayout.LayoutParams(dp(60), dp(4));
-        barLp.addRule(RelativeLayout.CENTER_IN_PARENT);
-        bar.setLayoutParams(barLp);
-        GradientDrawable d = new GradientDrawable();
-        d.setColor(cResizer());
-        d.setCornerRadius(dp(2));
-        bar.setBackground(d);
-        wrapper.addView(bar);
+        // Centered decorative pill (visual only — no touch)
+        View pill = new View(getContext());
+        RelativeLayout.LayoutParams pillLp = new RelativeLayout.LayoutParams(dp(40), dp(3));
+        pillLp.addRule(RelativeLayout.CENTER_IN_PARENT);
+        pill.setLayoutParams(pillLp);
+        GradientDrawable pillBg = new GradientDrawable();
+        pillBg.setColor(cResizer());
+        pillBg.setCornerRadius(dp(2));
+        pill.setBackground(pillBg);
+        wrapper.addView(pill);
 
-        // Arrow button pinned to left with a right-side divider
-        Button gearBtn = new Button(getContext());
-        gearBtn.setText("▲");
-        gearBtn.setBackground(null);
-        gearBtn.setTextColor(cTextDim());
-        gearBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
-        gearBtn.setPadding(dp(8), 0, dp(10), 0);
-        gearBtn.setId(View.generateViewId());
-        RelativeLayout.LayoutParams gearLp = new RelativeLayout.LayoutParams(
+        // Upper-left handle: short tap = settings popup, drag up/down = resize
+        Button handle = new Button(getContext());
+        handle.setText("⠿");
+        handle.setBackground(null);
+        handle.setTextColor(cResizer());
+        handle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        handle.setPadding(dp(12), 0, dp(16), 0);
+        handle.setAllCaps(false);
+        handle.setStateListAnimator(null);
+        RelativeLayout.LayoutParams handleLp = new RelativeLayout.LayoutParams(
             RelativeLayout.LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT);
-        gearLp.addRule(RelativeLayout.ALIGN_PARENT_START);
-        gearLp.addRule(RelativeLayout.CENTER_VERTICAL);
-        gearBtn.setLayoutParams(gearLp);
-        gearBtn.setOnClickListener(v -> showSettingsPopup(gearBtn));
-        wrapper.addView(gearBtn);
+        handleLp.addRule(RelativeLayout.ALIGN_PARENT_START);
+        handleLp.addRule(RelativeLayout.CENTER_VERTICAL);
+        handle.setLayoutParams(handleLp);
 
-        // Divider line to the right of the arrow button
-        View divider = new View(getContext());
-        divider.setBackgroundColor(cResizer());
-        RelativeLayout.LayoutParams divLp = new RelativeLayout.LayoutParams(dp(2), LayoutParams.MATCH_PARENT);
-        divLp.addRule(RelativeLayout.END_OF, gearBtn.getId());
-        divLp.addRule(RelativeLayout.CENTER_VERTICAL);
-        divider.setLayoutParams(divLp);
-        wrapper.addView(divider);
+        final float[] startY = {0};
+        final int[]   startH = {0};
+        final boolean[] wasDrag = {false};
+        handle.setOnTouchListener((v, event) -> {
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    startY[0]  = event.getRawY();
+                    startH[0]  = prefs().getInt(KEY_HEIGHT_DP, DEFAULT_HEIGHT_DP);
+                    wasDrag[0] = false;
+                    v.setPressed(true);
+                    return true;
+                case MotionEvent.ACTION_MOVE:
+                    float dy = startY[0] - event.getRawY();
+                    if (Math.abs(dy) > dp(6)) wasDrag[0] = true;
+                    if (wasDrag[0]) {
+                        int deltaDp = (int)(dy / getResources().getDisplayMetrics().density);
+                        setKeyboardHeightDp(startH[0] + deltaDp);
+                    }
+                    return true;
+                case MotionEvent.ACTION_UP:
+                    v.setPressed(false);
+                    if (wasDrag[0]) {
+                        prefs().edit().putInt(KEY_HEIGHT_DP, kbdHeightDp).apply();
+                    } else {
+                        showSettingsPopup(v);
+                    }
+                    wasDrag[0] = false;
+                    return true;
+                case MotionEvent.ACTION_CANCEL:
+                    v.setPressed(false);
+                    if (wasDrag[0]) prefs().edit().putInt(KEY_HEIGHT_DP, kbdHeightDp).apply();
+                    wasDrag[0] = false;
+                    return true;
+            }
+            return false;
+        });
+        wrapper.addView(handle);
 
         resizerBar = wrapper;
-        wrapper.setOnTouchListener(new ResizeTouchListener());
         addView(wrapper);
     }
 
@@ -277,43 +311,13 @@ public class KeyboardView extends LinearLayout {
         popupBg.setStroke(dp(1), cKeyDark());
         content.setBackground(popupBg);
 
-        // Size label
-        final TextView sizeLabel = new TextView(getContext());
-        sizeLabel.setText("Keyboard size: " + kbdHeightDp + "dp");
-        sizeLabel.setTextColor(cTextDim());
-        sizeLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        content.addView(sizeLabel);
-
-        // SeekBar (API 21 compat: offset by MIN)
-        SeekBar seekBar = new SeekBar(getContext());
-        seekBar.setMax(MAX_HEIGHT_DP - MIN_HEIGHT_DP);
-        seekBar.setProgress(kbdHeightDp - MIN_HEIGHT_DP);
-        LinearLayout.LayoutParams sbLp = new LinearLayout.LayoutParams(
-            LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
-        sbLp.setMargins(0, dp(8), 0, dp(12));
-        seekBar.setLayoutParams(sbLp);
-        seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar sb, int progress, boolean fromUser) {
-                if (!fromUser) return;
-                int actual = progress + MIN_HEIGHT_DP;
-                setKeyboardHeightDp(actual);
-                prefs().edit().putInt(KEY_HEIGHT_DP, kbdHeightDp).apply();
-                sizeLabel.setText("Keyboard size: " + kbdHeightDp + "dp");
-                requestLayout();
-            }
-            @Override public void onStartTrackingTouch(SeekBar sb) {}
-            @Override public void onStopTrackingTouch(SeekBar sb) {}
-        });
-        content.addView(seekBar);
-
         // Theme toggle
         Button themeBtn = makeButton(darkTheme ? "☀️ Light mode" : "🌙 Dark mode", cKeyDark(), cText());
         LinearLayout.LayoutParams tbLp = new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(44));
         tbLp.setMargins(0, 0, 0, dp(8));
         themeBtn.setLayoutParams(tbLp);
 
-        PopupWindow pw = new PopupWindow(content, dp(260), ViewGroup.LayoutParams.WRAP_CONTENT, true);
+        PopupWindow pw = new PopupWindow(content, dp(240), ViewGroup.LayoutParams.WRAP_CONTENT, true);
         pw.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
         pw.setOutsideTouchable(true);
 
@@ -371,9 +375,15 @@ public class KeyboardView extends LinearLayout {
         setKeyboardHeightDp(saved);
     }
 
+    private int maxHeightDp() {
+        int halfScreenPx = getResources().getDisplayMetrics().heightPixels / 2;
+        return (int) (halfScreenPx / getResources().getDisplayMetrics().density);
+    }
+
     private void setKeyboardHeightDp(int dp) {
         if (dp < MIN_HEIGHT_DP) dp = MIN_HEIGHT_DP;
-        if (dp > MAX_HEIGHT_DP) dp = MAX_HEIGHT_DP;
+        int max = maxHeightDp();
+        if (dp > max) dp = max;
         kbdHeightDp = dp;
         ViewGroup.LayoutParams lp = getLayoutParams();
         int total = dp(dp) + dp(16); // include resizer
@@ -424,8 +434,10 @@ public class KeyboardView extends LinearLayout {
         if (!hwModelReady && hwRecognizer == null && !hwInitializing) {
             initHandwritingRecognizer();
         }
+        // Fixed height: keyboard content minus bottom row (48dp) and candidate bar (40dp)
+        int hwPx = Math.max(dp(80), dp(kbdHeightDp) - dp(88));
         HandwritingView hw = new HandwritingView(getContext());
-        hw.setLayoutParams(new LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f));
+        hw.setLayoutParams(new LayoutParams(LayoutParams.MATCH_PARENT, hwPx));
         keyboardArea.addView(hw);
 
         LinearLayout row4 = newRow();
@@ -1255,6 +1267,11 @@ public class KeyboardView extends LinearLayout {
             String ch = options[0];
             if (shift && ch.length() == 1 && Character.isLetter(ch.charAt(0))) ch = ch.toUpperCase();
             listener.onText(ch);
+            // Clear one-shot shift after the first letter of a new key sequence
+            if (shift && !shiftLock) {
+                shift = false;
+                render();
+            }
         }
         t9Handler.removeCallbacks(t9Reset);
         t9Handler.postDelayed(t9Reset, 900);
