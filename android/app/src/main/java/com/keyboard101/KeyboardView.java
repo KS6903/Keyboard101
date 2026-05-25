@@ -1399,6 +1399,10 @@ public class KeyboardView extends LinearLayout {
 
         public HandwritingView(Context context) {
             super(context);
+            // Required on some Android versions so the view registers as a
+            // touch target and onTouchEvent is dispatched to this view.
+            setClickable(true);
+            setFocusableInTouchMode(true);
             paint.setAntiAlias(true);
             paint.setColor(cText());
             paint.setStyle(android.graphics.Paint.Style.STROKE);
@@ -1471,12 +1475,18 @@ public class KeyboardView extends LinearLayout {
         private void runRecognition() {
             if (mode != Mode.HANDWRITING) return;
             if (!hwModelReady || hwRecognizer == null || completedStrokes.isEmpty()) return;
-            if (viewWidth <= 0 || viewHeight <= 0) return;
+            float w = viewWidth > 0 ? viewWidth : getWidth();
+            float h = viewHeight > 0 ? viewHeight : getHeight();
+            if (w <= 0 || h <= 0) {
+                // Layout hasn't completed yet; retry on the next frame.
+                recognizeHandler.postDelayed(this::runRecognition, 100);
+                return;
+            }
             try {
                 Ink.Builder inkBuilder = Ink.builder();
                 for (Ink.Stroke.Builder sb : completedStrokes) inkBuilder.addStroke(sb.build());
                 RecognitionContext ctx = RecognitionContext.builder()
-                    .setWritingArea(new WritingArea(viewWidth, viewHeight))
+                    .setWritingArea(new WritingArea(w, h))
                     .build();
                 hwRecognizer.recognize(inkBuilder.build(), ctx)
                     .addOnSuccessListener(result -> {

@@ -13,7 +13,8 @@
       "Bash(./gradlew.bat compileDebugJavaWithJavac)",
       "Bash(cp \"app/build/outputs/apk/debug/app-debug.apk\" \"../KeyS.apk\")",
       "Read(//d/Keyboard proj/**)",
-      "Bash(cd \"d:\\\\Keyboard proj\\\\Keyboard101\\\\android\" && ./gradlew.bat assembleDebug 2>&1 | tail -5 && cp \"app/build/outputs/apk/debug/app-debug.apk\" \"../KeyS.apk\" && ls -la \"../KeyS.apk\")"
+      "Bash(cd \"d:\\\\Keyboard proj\\\\Keyboard101\\\\android\" && ./gradlew.bat assembleDebug 2>&1 | tail -5 && cp \"app/build/outputs/apk/debug/app-debug.apk\" \"../KeyS.apk\" && ls -la \"../KeyS.apk\")",
+      "Bash(.\\\\gradlew.bat assembleDebug)"
     ],
     "additionalDirectories": [
       "d:\\Keyboard proj"
