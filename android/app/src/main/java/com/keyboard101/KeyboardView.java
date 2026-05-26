@@ -1399,10 +1399,12 @@ public class KeyboardView extends LinearLayout {
 
         public HandwritingView(Context context) {
             super(context);
-            // Required on some Android versions so the view registers as a
-            // touch target and onTouchEvent is dispatched to this view.
             setClickable(true);
             setFocusableInTouchMode(true);
+            // Hardware-accelerated drawPath with ROUND caps/joins crashes on
+            // many Android 7-9 GPU drivers (Qualcomm/MediaTek Skia bug).
+            // Force software rendering for this view only.
+            setLayerType(LAYER_TYPE_SOFTWARE, null);
             paint.setAntiAlias(true);
             paint.setColor(cText());
             paint.setStyle(android.graphics.Paint.Style.STROKE);
@@ -1474,7 +1476,12 @@ public class KeyboardView extends LinearLayout {
 
         private void runRecognition() {
             if (mode != Mode.HANDWRITING) return;
-            if (!hwModelReady || hwRecognizer == null || completedStrokes.isEmpty()) return;
+            if (completedStrokes.isEmpty()) return;
+            if (!hwModelReady || hwRecognizer == null) {
+                // Model still loading — retry in 1.5s so the stroke isn't lost.
+                recognizeHandler.postDelayed(this::runRecognition, 1500);
+                return;
+            }
             float w = viewWidth > 0 ? viewWidth : getWidth();
             float h = viewHeight > 0 ? viewHeight : getHeight();
             if (w <= 0 || h <= 0) {
