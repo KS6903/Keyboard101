@@ -25,17 +25,6 @@ import android.widget.PopupWindow;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
 
-import com.google.mlkit.common.model.DownloadConditions;
-import com.google.mlkit.common.model.RemoteModelManager;
-import com.google.mlkit.vision.digitalink.DigitalInkRecognition;
-import com.google.mlkit.vision.digitalink.DigitalInkRecognitionModel;
-import com.google.mlkit.vision.digitalink.DigitalInkRecognitionModelIdentifier;
-import com.google.mlkit.vision.digitalink.DigitalInkRecognizer;
-import com.google.mlkit.vision.digitalink.DigitalInkRecognizerOptions;
-import com.google.mlkit.vision.digitalink.Ink;
-import com.google.mlkit.vision.digitalink.RecognitionCandidate;
-import com.google.mlkit.vision.digitalink.RecognitionContext;
-import com.google.mlkit.vision.digitalink.WritingArea;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -130,11 +119,7 @@ public class KeyboardView extends LinearLayout {
 
     // Handwriting recognition state (persists across render() calls)
     private final List<String> hwCandidates = new ArrayList<>();
-    private boolean hwModelReady = false;
-    private DigitalInkRecognizer hwRecognizer;
-    private boolean hwInitializing = false;
-    // Set true once the user has lifted a stroke that ran through recognition;
-    // controls whether the candidate bar should say "no match" vs "draw…".
+    // Set true once recognition has been attempted; controls "no match" vs "draw…" hint.
     private boolean hwHasAttempt = false;
     private final Handler hwUiHandler = new Handler(Looper.getMainLooper());
     private final Handler autoCommitHandler = new Handler(Looper.getMainLooper());
@@ -213,9 +198,6 @@ public class KeyboardView extends LinearLayout {
             applySavedHeight();
             autoCapCheck();
             render();
-            // Start the handwriting model load silently so it's ready by the
-            // time the user (maybe) opens Handwriting mode.
-            initHandwritingRecognizer();
         } catch (Throwable t) {
             Log.w("KeyS", "KeyboardView init failed", t);
         }
@@ -473,9 +455,6 @@ public class KeyboardView extends LinearLayout {
     }
 
     private void renderHandwriting() {
-        if (!hwModelReady && hwRecognizer == null && !hwInitializing) {
-            initHandwritingRecognizer();
-        }
         // Fixed height: keyboard content minus bottom row (48dp) and candidate bar (40dp)
         int hwPx = Math.max(dp(80), dp(kbdHeightDp) - dp(88));
         HandwritingView hw = new HandwritingView(getContext());
@@ -496,64 +475,10 @@ public class KeyboardView extends LinearLayout {
         keyboardArea.addView(row4);
     }
 
-    /**
-     * Fires the ML Kit handwriting model load entirely in the background.
-     * No UI status updates — the only observable side-effect is hwModelReady
-     * flipping to true once the recognizer is built. Recognition naturally
-     * no-ops while the flag is false (see runRecognition), so the user just
-     * sees an empty candidate bar with the static "Draw a character below…"
-     * hint until the model finishes loading.
-     */
-    private void initHandwritingRecognizer() {
-        if (hwInitializing || hwModelReady) return;
-        hwInitializing = true;
-        try {
-            DigitalInkRecognitionModelIdentifier modelId =
-                DigitalInkRecognitionModelIdentifier.fromLanguageTag("zh-Hans-CN");
-            if (modelId == null) { hwInitializing = false; return; }
-            DigitalInkRecognitionModel model =
-                DigitalInkRecognitionModel.builder(modelId).build();
-            RemoteModelManager.getInstance().isModelDownloaded(model)
-                .addOnSuccessListener(isDownloaded -> {
-                    if (Boolean.TRUE.equals(isDownloaded)) {
-                        createHwRecognizer(model);
-                    } else {
-                        try {
-                            RemoteModelManager.getInstance()
-                                .download(model, new DownloadConditions.Builder().build())
-                                .addOnSuccessListener(unused -> createHwRecognizer(model))
-                                .addOnFailureListener(e -> hwInitializing = false);
-                        } catch (Throwable t) {
-                            hwInitializing = false;
-                        }
-                    }
-                })
-                .addOnFailureListener(e -> hwInitializing = false);
-        } catch (Throwable t) {
-            hwInitializing = false;
-            Log.w("KeyS", "Handwriting init failed", t);
-        }
-    }
-
-    private void createHwRecognizer(DigitalInkRecognitionModel model) {
-        try {
-            hwRecognizer = DigitalInkRecognition.getClient(
-                DigitalInkRecognizerOptions.builder(model).build());
-            hwModelReady = true;
-        } catch (Throwable t) {
-            Log.w("KeyS", "Failed to create recognizer", t);
-        }
-        hwInitializing = false;
-        // If the user is sitting in handwriting mode while we initialized,
-        // refresh the candidate bar so the "Loading…" hint flips to "Draw…".
-        hwUiHandler.post(() -> {
-            try {
-                if (mode == Mode.HANDWRITING && isAttachedToWindow()) updateCandidates();
-            } catch (Throwable ignored) {}
-        });
-    }
-
     private void updateCandidates() {
+        // Sync background with current theme (not set at build-time only).
+        candidateScroll.setBackgroundColor(cPanel());
+        candidateBar.setBackgroundColor(cPanel());
         candidateBar.removeAllViews();
         boolean isChinese = (mode == Mode.PINYIN || mode == Mode.HANDWRITING);
         if (isChinese) {
@@ -569,7 +494,7 @@ public class KeyboardView extends LinearLayout {
                 if (pinyinCandidates.isEmpty()) {
                     TextView loading = new TextView(getContext());
                     loading.setText("Fetching…");
-                    loading.setTextColor(cTextDim());
+                    loading.setTextColor(cText());
                     loading.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
                     candidateBar.addView(loading);
                 } else {
@@ -585,23 +510,18 @@ public class KeyboardView extends LinearLayout {
                     }
                 } else {
                     TextView hint = new TextView(getContext());
-                    String label;
-                    if (!hwModelReady)      label = "Loading handwriting…";
-                    else if (hwHasAttempt)  label = "No match — try again";
-                    else                    label = "Draw a character below...";
-                    hint.setText(label);
-                    hint.setTextColor(cTextDim());
-                    hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+                    hint.setText(hwHasAttempt ? "No match — try again" : "Draw a character below...");
+                    hint.setTextColor(cText());
+                    hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
                     candidateBar.addView(hint);
                 }
             } else {
                 TextView hint = new TextView(getContext());
                 hint.setText("Type pinyin...");
-                hint.setTextColor(cTextDim());
-                hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+                hint.setTextColor(cText());
+                hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
                 candidateBar.addView(hint);
             }
-            
         } else {
             candidateScroll.setVisibility(GONE);
         }
@@ -1390,8 +1310,8 @@ public class KeyboardView extends LinearLayout {
 
     // ---------- Handwriting View ----------
     private class HandwritingView extends View {
-        private final List<Ink.Stroke.Builder> completedStrokes = new ArrayList<>();
-        private Ink.Stroke.Builder activeStroke;
+        private final List<HandwritingEngine.Stroke> completedStrokes = new ArrayList<>();
+        private HandwritingEngine.Stroke activeStroke;
         private final android.graphics.Path drawPath = new android.graphics.Path();
         private final android.graphics.Paint paint = new android.graphics.Paint();
         private final Handler recognizeHandler = new Handler(Looper.getMainLooper());
@@ -1401,9 +1321,8 @@ public class KeyboardView extends LinearLayout {
             super(context);
             setClickable(true);
             setFocusableInTouchMode(true);
-            // Hardware-accelerated drawPath with ROUND caps/joins crashes on
-            // many Android 7-9 GPU drivers (Qualcomm/MediaTek Skia bug).
-            // Force software rendering for this view only.
+            // Force software rendering: hardware-accelerated drawPath with ROUND
+            // caps/joins crashes on Android 7-9 GPU drivers (Qualcomm/MediaTek).
             setLayerType(LAYER_TYPE_SOFTWARE, null);
             paint.setAntiAlias(true);
             paint.setColor(cText());
@@ -1448,19 +1367,27 @@ public class KeyboardView extends LinearLayout {
                 long t = event.getEventTime();
                 switch (event.getAction()) {
                     case MotionEvent.ACTION_DOWN:
-                        activeStroke = Ink.Stroke.builder();
-                        activeStroke.addPoint(Ink.Point.create(x, y, t));
+                        activeStroke = new HandwritingEngine.Stroke();
+                        activeStroke.xs.add(x);
+                        activeStroke.ys.add(y);
+                        activeStroke.ts.add(t);
                         drawPath.moveTo(x, y);
                         recognizeHandler.removeCallbacksAndMessages(null);
                         cancelAutoCommit();
                         break;
                     case MotionEvent.ACTION_MOVE:
-                        if (activeStroke != null) activeStroke.addPoint(Ink.Point.create(x, y, t));
+                        if (activeStroke != null) {
+                            activeStroke.xs.add(x);
+                            activeStroke.ys.add(y);
+                            activeStroke.ts.add(t);
+                        }
                         drawPath.lineTo(x, y);
                         break;
                     case MotionEvent.ACTION_UP:
                         if (activeStroke != null) {
-                            activeStroke.addPoint(Ink.Point.create(x, y, t));
+                            activeStroke.xs.add(x);
+                            activeStroke.ys.add(y);
+                            activeStroke.ts.add(t);
                             completedStrokes.add(activeStroke);
                             activeStroke = null;
                         }
@@ -1477,55 +1404,25 @@ public class KeyboardView extends LinearLayout {
         private void runRecognition() {
             if (mode != Mode.HANDWRITING) return;
             if (completedStrokes.isEmpty()) return;
-            if (!hwModelReady || hwRecognizer == null) {
-                // Model still loading — retry in 1.5s so the stroke isn't lost.
-                recognizeHandler.postDelayed(this::runRecognition, 1500);
-                return;
-            }
             float w = viewWidth > 0 ? viewWidth : getWidth();
             float h = viewHeight > 0 ? viewHeight : getHeight();
             if (w <= 0 || h <= 0) {
-                // Layout hasn't completed yet; retry on the next frame.
                 recognizeHandler.postDelayed(this::runRecognition, 100);
                 return;
             }
-            try {
-                Ink.Builder inkBuilder = Ink.builder();
-                for (Ink.Stroke.Builder sb : completedStrokes) inkBuilder.addStroke(sb.build());
-                RecognitionContext ctx = RecognitionContext.builder()
-                    .setWritingArea(new WritingArea(w, h))
-                    .build();
-                hwRecognizer.recognize(inkBuilder.build(), ctx)
-                    .addOnSuccessListener(result -> {
-                        try {
-                            if (!isAttachedToWindow()) return;
-                            hwCandidates.clear();
-                            for (RecognitionCandidate c : result.getCandidates()) {
-                                String text = c.getText();
-                                if (text != null && !text.trim().isEmpty()) hwCandidates.add(text);
-                                if (hwCandidates.size() >= 15) break;
-                            }
-                            hwHasAttempt = true;
-                            updateCandidates();
-                            // Arm the 2-second auto-commit. Any new stroke, candidate
-                            // tap, mode switch, or Clear cancels this timer.
-                            if (!hwCandidates.isEmpty()) scheduleAutoCommit();
-                        } catch (Throwable t) {
-                            Log.w("KeyS", "Ink recognition handler failed", t);
-                        }
-                    })
-                    .addOnFailureListener(e -> {
-                        Log.w("KeyS", "Ink recognition failed: " + e.getMessage());
-                        hwHasAttempt = true;
-                        hwUiHandler.post(() -> { try { updateCandidates(); } catch (Throwable ignored) {} });
-                    });
-            } catch (Throwable t) {
-                // Soft fail — log and let the next stroke try again. Do NOT
-                // latch a disabled state; transient ML Kit hiccups (e.g. on the
-                // very first call while the recognizer warms up) shouldn't kill
-                // the feature for the whole session.
-                Log.w("KeyS", "Handwriting recognition error (will retry)", t);
-            }
+            List<HandwritingEngine.Stroke> snapshot = new ArrayList<>(completedStrokes);
+            HandwritingEngine.recognize(snapshot, w, h, candidates -> {
+                try {
+                    if (!isAttachedToWindow()) return;
+                    hwCandidates.clear();
+                    hwCandidates.addAll(candidates);
+                    hwHasAttempt = true;
+                    updateCandidates();
+                    if (!hwCandidates.isEmpty()) scheduleAutoCommit();
+                } catch (Throwable t) {
+                    Log.w("KeyS", "Handwriting result update failed", t);
+                }
+            });
         }
     }
 

@@ -16,11 +16,6 @@ import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 
-import com.google.mlkit.common.model.DownloadConditions;
-import com.google.mlkit.common.model.RemoteModelManager;
-import com.google.mlkit.vision.digitalink.DigitalInkRecognitionModel;
-import com.google.mlkit.vision.digitalink.DigitalInkRecognitionModelIdentifier;
-
 public class SettingsActivity extends AppCompatActivity {
 
     private static final String PREFS   = "keyboard101";
@@ -35,8 +30,6 @@ public class SettingsActivity extends AppCompatActivity {
     private String pendingApkUrl = null;
     // Ensures we only fetch the update JSON once per launch
     private boolean updateChecked = false;
-    // One-shot guard so the handwriting model is pre-downloaded a single time per launch
-    private boolean preloadStarted = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -90,36 +83,6 @@ public class SettingsActivity extends AppCompatActivity {
             updateChecked = true;
             checkForUpdate();
         }
-        if (!preloadStarted) {
-            preloadStarted = true;
-            preloadHandwritingModel();
-        }
-    }
-
-    /**
-     * Fires a silent ML Kit handwriting model download in the background.
-     * Why: the model is fetched lazily by ML Kit on first use, which surprises
-     * users who just sideloaded the APK and crashes the IME if callbacks fire
-     * after view detach. Pre-warming here means by the time the user reaches
-     * handwriting mode the model is already on disk.
-     */
-    private void preloadHandwritingModel() {
-        try {
-            DigitalInkRecognitionModelIdentifier id =
-                DigitalInkRecognitionModelIdentifier.fromLanguageTag("zh-Hans-CN");
-            if (id == null) return;
-            DigitalInkRecognitionModel model =
-                DigitalInkRecognitionModel.builder(id).build();
-            RemoteModelManager.getInstance().isModelDownloaded(model)
-                .addOnSuccessListener(downloaded -> {
-                    if (Boolean.FALSE.equals(downloaded)) {
-                        try {
-                            RemoteModelManager.getInstance()
-                                .download(model, new DownloadConditions.Builder().build());
-                        } catch (Throwable ignored) {}
-                    }
-                });
-        } catch (Throwable ignored) {}
     }
 
     // -------------------------------------------------------------------------
